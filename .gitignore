@@ -1,5 +1,5 @@
 bloomq
-*.o
-wsServer/
 server
+*.o
+wsServer/libws.a
 __pycache__/
