@@ -9,11 +9,22 @@ CFLAGS ?= -O2 -Wall -Wextra
 CLI    ?= /root/bip39rxcrack-cli/bip39rxcrack
 RESEED39_DIR ?= /root/bip39rxcrack
 
-.PHONY: all parity clean
-all: bloomq
+WS_DIR ?= wsServer
+.PHONY: all parity clean serve
+all: bloomq server
 
 bloomq: bloomq.c bloom_host.h bloom_common.h
 	$(CC) $(CFLAGS) -o bloomq bloomq.c
+
+$(WS_DIR)/libws.a:
+	$(MAKE) -C $(WS_DIR) libws.a
+
+server: server.c bloom_host.h bloom_common.h $(WS_DIR)/libws.a
+	$(CC) $(CFLAGS) -I$(WS_DIR)/include -o server server.c $(WS_DIR)/libws.a -lpthread
+
+# run the server on the real filter (foreground)
+serve: server
+	./server /root/data/alladdrs_classic.blf 8080
 
 # prove the server's program-probe agrees with the CLI's address-probe, byte for byte
 parity: bloomq

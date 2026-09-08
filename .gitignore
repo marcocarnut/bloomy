@@ -1,3 +1,5 @@
 bloomq
 *.o
 wsServer/
+server
+__pycache__/
