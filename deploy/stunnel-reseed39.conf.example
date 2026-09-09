@@ -1,0 +1,22 @@
+; reseed39 bloom TLS terminator.
+;
+; Fronts the local plaintext bloom server (127.0.0.1:8080) with TLS. WebSocket is plain
+; TCP after the HTTP upgrade, so stunnel just passes bytes through -- no ws-aware config.
+;
+; Install as /etc/stunnel/reseed39.conf on Ubuntu; the stunnel4 package auto-loads
+; /etc/stunnel/*.conf and starts on boot (systemctl enable --now stunnel4). stunnel starts
+; as root, reads the LE key, then drops privileges -- so the root-only privkey is fine.
+;
+; Two ways to get :443 traffic here (pick ONE -- see DEPLOY.md):
+;   A) stunnel binds 443 directly, granted CAP_NET_BIND_SERVICE   -> accept = 443   (simplest)
+;   B) ufw DNATs 443 -> 4430, stunnel stays unprivileged          -> accept = 4430
+
+pid = /run/stunnel4/reseed39.pid
+; Under systemd, leave foreground unset (packaged service manages it).
+
+[reseed39-bloom]
+accept  = 4430
+connect = 127.0.0.1:8080
+cert    = /etc/letsencrypt/live/YOURDOMAIN/fullchain.pem
+key     = /etc/letsencrypt/live/YOURDOMAIN/privkey.pem
+sslVersionMin = TLSv1.2

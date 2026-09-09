@@ -60,6 +60,9 @@ int main(int argc,char**argv){
   if(argc<2){ fprintf(stderr,"usage: %s FILE.blf [port] [www_root] [allow_ip ...]\n",argv[0]); return 2; }
   uint16_t port = argc>2 ? (uint16_t)atoi(argv[2]) : 8080;
   const char *www = argc>3 ? argv[3] : "./www";   /* GET / on the WS port serves this dir */
+  /* Bind address: default localhost (behind stunnel, all real traffic is from 127.0.0.1;
+     never needs a public interface). Set BIND=0.0.0.0 for direct LAN testing. */
+  const char *bind_host = getenv("BIND"); if(!bind_host||!bind_host[0]) bind_host="127.0.0.1";
   if(bloom_host_load(argv[1],&g_bloom)) return 2;
   ws_set_www(www);
   char info[200]; snprintf(info,sizeof info,
@@ -68,13 +71,12 @@ int main(int argc,char**argv){
   /* peer allowlist: localhost always; each extra arg is an allowed IP. No extra args = allow all. */
   ws_allow_ip("127.0.0.1");
   for(int i=4;i<argc;i++) ws_allow_ip(argv[i]);
-  fprintf(stderr,"reseed39 bloom server: %llu addresses; WS + static (%s) on 0.0.0.0:%u",
-          (unsigned long long)g_bloom.n_addrs, www, port);
-  if(argc>4){ fprintf(stderr,"; allow 127.0.0.1"); for(int i=4;i<argc;i++) fprintf(stderr,",%s",argv[i]); }
-  else fprintf(stderr,"; WARNING: no IP allowlist (accepting ALL)");
+  fprintf(stderr,"reseed39 bloom server: %llu addresses; WS + static (%s) on %s:%u",
+          (unsigned long long)g_bloom.n_addrs, www, bind_host, port);
+  fprintf(stderr,"; allow 127.0.0.1"); for(int i=4;i<argc;i++) fprintf(stderr,",%s",argv[i]);
   fprintf(stderr,"\n");
   struct ws_server srv = {
-    .host="0.0.0.0", .port=port, .thread_loop=0, .timeout_ms=0,
+    .host=bind_host, .port=port, .thread_loop=0, .timeout_ms=0,
     .evs = { .onopen=onopen, .onclose=onclose, .onmessage=onmessage },
   };
   ws_socket(&srv);   /* blocks, one thread per client internally */

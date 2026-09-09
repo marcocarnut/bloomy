@@ -75,6 +75,10 @@ static int bloom_host_load(const char*path, BloomSet*A){
   void*base=mmap(0,sz,PROT_READ,MAP_SHARED,fd,0); close(fd);
   if(base==MAP_FAILED){ fprintf(stderr,"bloom: mmap %s failed\n",path); return 1; }
   A->base=base; A->sz=sz;
+  /* Queries are scattered random probes; default readahead just faults neighbour
+     pages we never read and evicts useful cache. On a RAM-starved / slow-disk host
+     (e.g. oniric) MADV_RANDOM measurably cuts wasted I/O. Advisory: ignore errors. */
+  (void)madvise(base, sz, MADV_RANDOM);
   uint32_t magic=*(uint32_t*)base;
   if(magic==BLF3_MAGIC){
     Blf3Header*h=(Blf3Header*)base; int f1_classic=(h->rsv==1);
