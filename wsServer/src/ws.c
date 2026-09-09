@@ -1027,6 +1027,9 @@ static inline int is_valid_frame(int opcode)
  * (Connection: close, no Content-Length -> body ends at close), so no fstat needed. */
 static char g_www_root[512] = "";
 void ws_set_www(const char *root){ snprintf(g_www_root,sizeof g_www_root,"%s",root?root:""); }
+/* capability JSON returned for GET /bloom-info (the browser's pre-flight feature-detect). */
+static char g_bloom_info[256] = "";
+void ws_set_bloom_info(const char *json){ snprintf(g_bloom_info,sizeof g_bloom_info,"%s",json?json:""); }
 static const char* rs_mime(const char*p){
   const char*d=strrchr(p,'.'); if(!d) return "application/octet-stream";
   if(!strcmp(d,".html")||!strcmp(d,".htm")) return "text/html; charset=utf-8";
@@ -1048,6 +1051,9 @@ static int rs_serve_static(struct ws_frame_data *wfd){
   path[i]=0;
   char resp[512];
   if(strstr(path,"..")){ int l=snprintf(resp,sizeof resp,"HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); SEND(wfd->client,resp,l); return 1; }
+  if(!strcmp(path,"/bloom-info") && g_bloom_info[0]){   /* capability pre-flight (feature-detect) */
+    int l=snprintf(resp,sizeof resp,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n%s",g_bloom_info);
+    SEND(wfd->client,resp,l); return 1; }
   if(!strcmp(path,"/")) snprintf(path,sizeof path,"/index.html");
   char full[1100]; snprintf(full,sizeof full,"%s%s",g_www_root,path);
   int fd=open(full,O_RDONLY);

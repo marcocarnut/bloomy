@@ -332,6 +332,8 @@ extern "C" {
 
 	/* reseed39 patch: set a static-file root; a non-WS GET on the WS port serves from it. */
 	extern void ws_set_www(const char *root);
+	/* reseed39 patch: JSON returned for GET /bloom-info (browser capability pre-flight). */
+	extern void ws_set_bloom_info(const char *json);
 
 #ifdef AFL_FUZZ
 	extern int ws_file(struct ws_events *evs, const char *file);

@@ -62,10 +62,13 @@ int main(int argc,char**argv){
   const char *www = argc>3 ? argv[3] : "./www";   /* GET / on the WS port serves this dir */
   if(bloom_host_load(argv[1],&g_bloom)) return 2;
   ws_set_www(www);
-  fprintf(stderr,"reseed39 bloom server: %llu addresses; WS + static (%s) on http://0.0.0.0:%u\n",
+  char info[200]; snprintf(info,sizeof info,
+    "{\"service\":\"reseed39-bloom\",\"version\":1,\"addresses\":%llu}", (unsigned long long)g_bloom.n_addrs);
+  ws_set_bloom_info(info);   /* GET /bloom-info -> this JSON (the browser's feature-detect) */
+  fprintf(stderr,"reseed39 bloom server: %llu addresses; WS + static (%s) on http://127.0.0.1:%u (bind localhost; front with a TLS proxy for wss)\n",
           (unsigned long long)g_bloom.n_addrs, www, port);
   struct ws_server srv = {
-    .host="0.0.0.0", .port=port, .thread_loop=0, .timeout_ms=0,
+    .host="127.0.0.1", .port=port, .thread_loop=0, .timeout_ms=0,
     .evs = { .onopen=onopen, .onclose=onclose, .onmessage=onmessage },
   };
   ws_socket(&srv);   /* blocks, one thread per client internally */
