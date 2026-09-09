@@ -1030,6 +1030,23 @@ void ws_set_www(const char *root){ snprintf(g_www_root,sizeof g_www_root,"%s",ro
 /* capability JSON returned for GET /bloom-info (the browser's pre-flight feature-detect). */
 static char g_bloom_info[256] = "";
 void ws_set_bloom_info(const char *json){ snprintf(g_bloom_info,sizeof g_bloom_info,"%s",json?json:""); }
+
+/* reseed39 patch: optional peer-IP allowlist (LAN dev behind a firewall). Empty => allow all.
+   Checked at the top of do_handshake so it gates BOTH the WS upgrade and static GETs. */
+#include <arpa/inet.h>
+static char g_allow[8][46]; static int g_nallow = 0;
+void ws_allow_ip(const char *ip){ if(ip && g_nallow<8) snprintf(g_allow[g_nallow++],46,"%s",ip); }
+static int ip_allowed(int sock){
+  if(g_nallow==0) return 1;                       /* no list -> allow all */
+  struct sockaddr_storage ss; socklen_t sl=sizeof ss;
+  if(getpeername(sock,(struct sockaddr*)&ss,&sl)) return 0;
+  char ip[46]="";
+  if(ss.ss_family==AF_INET) inet_ntop(AF_INET,&((struct sockaddr_in*)&ss)->sin_addr,ip,sizeof ip);
+  else if(ss.ss_family==AF_INET6) inet_ntop(AF_INET6,&((struct sockaddr_in6*)&ss)->sin6_addr,ip,sizeof ip);
+  const char*p=ip; if(!strncmp(p,"::ffff:",7)) p+=7;   /* IPv4-mapped IPv6 -> bare v4 */
+  for(int i=0;i<g_nallow;i++) if(!strcmp(p,g_allow[i])) return 1;
+  return 0;
+}
 static const char* rs_mime(const char*p){
   const char*d=strrchr(p,'.'); if(!d) return "application/octet-stream";
   if(!strcmp(d,".html")||!strcmp(d,".htm")) return "text/html; charset=utf-8";
@@ -1068,6 +1085,7 @@ static int rs_serve_static(struct ws_frame_data *wfd){
 
 static int do_handshake(struct ws_frame_data *wfd)
 {
+	if (!ip_allowed(wfd->client->client_sock)) return (-1);   /* reseed39 patch: peer allowlist */
 	char *response; /* Handshake response message. */
 	char *p;        /* Last request line pointer.  */
 	ssize_t n;      /* Read/Write bytes.           */

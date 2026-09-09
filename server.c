@@ -57,7 +57,7 @@ static void onmessage(ws_cli_conn_t c, const unsigned char *msg, uint64_t size, 
 }
 
 int main(int argc,char**argv){
-  if(argc<2){ fprintf(stderr,"usage: %s FILE.blf [port] [www_root]\n",argv[0]); return 2; }
+  if(argc<2){ fprintf(stderr,"usage: %s FILE.blf [port] [www_root] [allow_ip ...]\n",argv[0]); return 2; }
   uint16_t port = argc>2 ? (uint16_t)atoi(argv[2]) : 8080;
   const char *www = argc>3 ? argv[3] : "./www";   /* GET / on the WS port serves this dir */
   if(bloom_host_load(argv[1],&g_bloom)) return 2;
@@ -65,10 +65,16 @@ int main(int argc,char**argv){
   char info[200]; snprintf(info,sizeof info,
     "{\"service\":\"reseed39-bloom\",\"version\":1,\"addresses\":%llu}", (unsigned long long)g_bloom.n_addrs);
   ws_set_bloom_info(info);   /* GET /bloom-info -> this JSON (the browser's feature-detect) */
-  fprintf(stderr,"reseed39 bloom server: %llu addresses; WS + static (%s) on http://127.0.0.1:%u (bind localhost; front with a TLS proxy for wss)\n",
+  /* peer allowlist: localhost always; each extra arg is an allowed IP. No extra args = allow all. */
+  ws_allow_ip("127.0.0.1");
+  for(int i=4;i<argc;i++) ws_allow_ip(argv[i]);
+  fprintf(stderr,"reseed39 bloom server: %llu addresses; WS + static (%s) on 0.0.0.0:%u",
           (unsigned long long)g_bloom.n_addrs, www, port);
+  if(argc>4){ fprintf(stderr,"; allow 127.0.0.1"); for(int i=4;i<argc;i++) fprintf(stderr,",%s",argv[i]); }
+  else fprintf(stderr,"; WARNING: no IP allowlist (accepting ALL)");
+  fprintf(stderr,"\n");
   struct ws_server srv = {
-    .host="127.0.0.1", .port=port, .thread_loop=0, .timeout_ms=0,
+    .host="0.0.0.0", .port=port, .thread_loop=0, .timeout_ms=0,
     .evs = { .onopen=onopen, .onclose=onclose, .onmessage=onmessage },
   };
   ws_socket(&srv);   /* blocks, one thread per client internally */

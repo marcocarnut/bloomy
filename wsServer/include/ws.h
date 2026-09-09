@@ -334,6 +334,8 @@ extern "C" {
 	extern void ws_set_www(const char *root);
 	/* reseed39 patch: JSON returned for GET /bloom-info (browser capability pre-flight). */
 	extern void ws_set_bloom_info(const char *json);
+	/* reseed39 patch: add an allowed peer IP (repeatable, up to 8; empty list = allow all). */
+	extern void ws_allow_ip(const char *ip);
 
 #ifdef AFL_FUZZ
 	extern int ws_file(struct ws_events *evs, const char *file);
