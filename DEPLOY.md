@@ -86,6 +86,15 @@ curl -s https://YOURDOMAIN/ -o /dev/null -w '%{http_code} %{size_download}\n'   
 Then open `https://YOURDOMAIN/` in a browser, leave the Address field blank, and run a
 known 2-blank-word recovery.
 
+## Real client IPs in the logs (PROXY protocol)
+Because stunnel terminates TLS, the backend would otherwise see every connection as
+`127.0.0.1`. To recover the real client IP: `protocol = proxy` in the stunnel conf (prepend a
+HAProxy PROXY v1 header) paired with `PROXY_PROTOCOL=1` on the server (unit env). The server
+peeks for the `PROXY ` signature and only consumes a header when present, so a direct localhost
+health check (no header) still works. The IP allowlist still matches the real socket peer
+(stunnel), so it is unaffected -- only `ws_getaddress`/the `[open]`/`[rate]`/`[close]` logs
+switch to the real IP. Both are enabled on oniric.
+
 ## Performance note (measured on oniric, 3.8 GiB RAM, slow VirtIO disk)
 The filter (6.5 GiB filter1 hot set) does not fit in RAM here, so queries are disk-bound:
 ~1 major fault/query at ~830 us each => a single connection is served at ~1,000 programs/s

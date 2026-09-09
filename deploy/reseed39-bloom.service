@@ -8,6 +8,10 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/reseed39
 # Bind localhost only: all real traffic arrives from stunnel on 127.0.0.1.
 Environment=BIND=127.0.0.1
+# Expect stunnel's PROXY-protocol header so logs show the real client IP (needs
+# `protocol = proxy` in the stunnel conf). Safe if absent -- non-PROXY connections
+# (e.g. a localhost health check) are detected by peek and pass through unchanged.
+Environment=PROXY_PROTOCOL=1
 ExecStart=/home/ubuntu/reseed39/server /home/ubuntu/reseed39/alladdrs_classic.blf 8080 /home/ubuntu/reseed39/www
 Restart=always
 RestartSec=2

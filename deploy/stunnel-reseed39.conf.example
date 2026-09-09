@@ -20,3 +20,6 @@ connect = 127.0.0.1:8080
 cert    = /etc/letsencrypt/live/YOURDOMAIN/fullchain.pem
 key     = /etc/letsencrypt/live/YOURDOMAIN/privkey.pem
 sslVersionMin = TLSv1.2
+; Prepend a HAProxy PROXY v1 header to the backend so it sees the real client IP
+; (pair with PROXY_PROTOCOL=1 on the server). Without it the backend logs 127.0.0.1.
+protocol = proxy

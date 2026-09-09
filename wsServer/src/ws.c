@@ -1048,6 +1048,35 @@ static int ip_allowed(int sock){
   for(int i=0;i<g_nallow;i++) if(!strcmp(p,g_allow[i])) return 1;
   return 0;
 }
+
+/* reseed39 patch: HAProxy PROXY protocol v1. When enabled, a TLS terminator (stunnel with
+   `protocol = proxy`) prepends one line -- "PROXY TCP4 <src> <dst> <sport> <dport>\r\n" --
+   before the client's bytes. We consume exactly that line and record the REAL client IP into
+   client->ip (so ws_getaddress / our logs show it). The allowlist (ip_allowed) still checks the
+   actual socket peer -- the terminator -- so it is unaffected. Only enabled when the terminator
+   is known to send the header, so a blocking read to end-of-line is safe. */
+static int g_proxy_proto = 0;
+void ws_set_proxy_protocol(int on){ g_proxy_proto = on ? 1 : 0; }
+static int read_proxy_v1(struct ws_connection *client){
+  /* Peek first: only consume bytes if this really is a PROXY header. Keeps direct (no-header)
+     connections -- e.g. a localhost `curl /bloom-info` health check -- working even in proxy mode. */
+  char peek[6]; ssize_t pk = recv(client->client_sock, peek, 6, MSG_PEEK|MSG_WAITALL);
+  if(pk < 6 || strncmp(peek,"PROXY ",6)) return 0;
+  char line[128]; size_t i=0; int prev=0;
+  while(i < sizeof(line)-1){
+    unsigned char ch; ssize_t r = recv(client->client_sock, &ch, 1, 0);
+    if(r <= 0) return -1;
+    line[i++] = (char)ch;
+    if(prev=='\r' && ch=='\n'){ i-=2; break; }   /* drop the CRLF */
+    prev = ch;
+  }
+  line[i]=0;
+  if(strncmp(line,"PROXY ",6)) return 0;          /* not a PROXY header -> leave ip untouched */
+  char proto[16]="", src[46]="";
+  if(sscanf(line+6,"%15s %45s",proto,src)==2 && (!strcmp(proto,"TCP4")||!strcmp(proto,"TCP6")))
+    snprintf(client->ip, sizeof(client->ip), "%s", src);
+  return 0;
+}
 static const char* rs_mime(const char*p){
   const char*d=strrchr(p,'.'); if(!d) return "application/octet-stream";
   if(!strcmp(d,".html")||!strcmp(d,".htm")) return "text/html; charset=utf-8";
@@ -1087,6 +1116,7 @@ static int rs_serve_static(struct ws_frame_data *wfd){
 static int do_handshake(struct ws_frame_data *wfd)
 {
 	if (!ip_allowed(wfd->client->client_sock)) return (-1);   /* reseed39 patch: peer allowlist */
+	if (g_proxy_proto && read_proxy_v1(wfd->client) < 0) return (-1);  /* reseed39: real client IP */
 	char *response; /* Handshake response message. */
 	char *p;        /* Last request line pointer.  */
 	ssize_t n;      /* Read/Write bytes.           */

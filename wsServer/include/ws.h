@@ -336,6 +336,9 @@ extern "C" {
 	extern void ws_set_bloom_info(const char *json);
 	/* reseed39 patch: add an allowed peer IP (repeatable, up to 8; empty list = allow all). */
 	extern void ws_allow_ip(const char *ip);
+	/* reseed39 patch: expect a HAProxy PROXY v1 header per connection (real client IP behind
+	   a TLS terminator, e.g. stunnel `protocol = proxy`). Enable ONLY when the terminator sends it. */
+	extern void ws_set_proxy_protocol(int on);
 
 #ifdef AFL_FUZZ
 	extern int ws_file(struct ws_events *evs, const char *file);

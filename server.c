@@ -112,9 +112,14 @@ int main(int argc,char**argv){
   /* peer allowlist: localhost always; each extra arg is an allowed IP. No extra args = allow all. */
   ws_allow_ip("127.0.0.1");
   for(int i=4;i<argc;i++) ws_allow_ip(argv[i]);
+  /* Behind stunnel with `protocol = proxy`, expect a PROXY v1 header so logs show the real
+     client IP instead of the terminator's 127.0.0.1. Off by default (LAN/direct connections). */
+  int proxy = getenv("PROXY_PROTOCOL") && getenv("PROXY_PROTOCOL")[0]=='1';
+  ws_set_proxy_protocol(proxy);
   fprintf(stderr,"reseed39 bloom server: %llu addresses; WS + static (%s) on %s:%u",
           (unsigned long long)g_bloom.n_addrs, www, bind_host, port);
   fprintf(stderr,"; allow 127.0.0.1"); for(int i=4;i<argc;i++) fprintf(stderr,",%s",argv[i]);
+  if(proxy) fprintf(stderr,"; PROXY-protocol on (real client IP from stunnel)");
   fprintf(stderr,"\n");
   struct ws_server srv = {
     .host=bind_host, .port=port, .thread_loop=0, .timeout_ms=0,
