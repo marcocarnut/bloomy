@@ -32,6 +32,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>   /* reseed39 patch: TCP_NODELAY */
 #include <netdb.h>
 #else
 #include <winsock2.h>
@@ -1952,6 +1953,15 @@ static void *ws_accept(void *data)
 		new_sock = accept(sock, (struct sockaddr *)&sa, &salen);
 		if (new_sock < 0)
 			panic("Error on accepting connections..");
+
+		/* reseed39 patch: disable Nagle. This is a request/response, small-frame
+		 * workload with a bounded client in-flight window; Nagle + the peer's
+		 * delayed-ACK adds a ~40 ms stall per round trip, throttling candidate
+		 * throughput far below the derivation rate. TCP_NODELAY removes it. */
+		{
+			int one = 1;
+			setsockopt(new_sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one));
+		}
 
 		if (timeout)
 		{
