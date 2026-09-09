@@ -45,35 +45,31 @@ sudoedit /etc/stunnel/reseed39.conf       # set YOURDOMAIN; pick accept = 443 or
 sudo systemctl enable --now stunnel4
 ```
 
-### Getting :443 to stunnel -- pick ONE
-**A. stunnel binds 443 directly (simplest, still unprivileged worker).** Set `accept = 443`
-in the conf, grant the bind capability, and open 443:
+### Getting :443 to stunnel
+**What is actually deployed on oniric** (simplest of all): the Ubuntu `stunnel4` service starts
+as root, so it binds `:443` and reads the root-only LE key directly, then `setuid`/`setgid`
+in the conf drop the worker to the unprivileged `stunnel4` user. No NAT, no capability
+override. Just `accept = 443` in the conf and `ufw allow 443/tcp`.
+
+One gotcha: because the worker drops privileges, its **pidfile must live somewhere the
+`stunnel4` user can write** -- `/run` (root-only) fails with "Cannot create pid file". Give it
+a runtime dir and a tmpfiles rule so it survives reboot:
 ```
-sudo systemctl edit stunnel4     # add:
-  [Service]
-  AmbientCapabilities=CAP_NET_BIND_SERVICE
-sudo ufw allow 443/tcp
+sudo install -d -o stunnel4 -g stunnel4 -m 0755 /run/stunnel4
+echo 'd /run/stunnel4 0755 stunnel4 stunnel4 -' | sudo tee /etc/tmpfiles.d/reseed39-stunnel.conf
+# conf: pid = /run/stunnel4/reseed39.pid
 ```
 
-**B. ufw DNAT 443 -> 4430 (what you sketched).** Keep `accept = 4430`. Add a nat rule at the
-top of `/etc/ufw/before.rules` (above the `*filter` block):
-```
-*nat
-:PREROUTING ACCEPT [0:0]
--A PREROUTING -p tcp --dport 443 -j REDIRECT --to-ports 4430
-COMMIT
-```
-then:
-```
-sudo ufw allow 443/tcp
-sudo ufw allow 4430/tcp        # REDIRECT rewrites the dport to 4430 *before* the filter chain,
-                               # so ufw must permit 4430 for the redirected packets to pass
-sudo ufw reload
-```
-Caveat: because the redirect happens before filtering, 4430 is then also reachable *directly*
-from outside (harmless -- it's the same TLS listener -- but if that bothers you, prefer A).
+If you ever run stunnel *not* as root (e.g. a hand-written unit), grant it the bind
+capability instead: `AmbientCapabilities=CAP_NET_BIND_SERVICE` + `accept = 443`. The ufw
+DNAT 443->4430 route also works but is strictly more complex (you must also `ufw allow 4430`,
+which then exposes 4430 directly), so it is not recommended here.
 
-Either way, **do not open 8080** -- it stays localhost-only.
+**Do not open 8080** -- it stays localhost-only (the server binds `127.0.0.1`).
+
+Note: stunnel binds IPv4 `0.0.0.0:443`; the "Binding to :::443: Address already in use" log
+line is the dual-stack IPv6 half failing after IPv4 succeeded, and is harmless when the
+domain is IPv4-only (no AAAA record), which oniric is.
 
 ## 4. Certificate renewal (don't skip -- LE certs are 90 days)
 stunnel reloads its cert on SIGHUP. Wire it to certbot:
