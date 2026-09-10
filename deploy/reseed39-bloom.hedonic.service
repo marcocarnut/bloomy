@@ -1,0 +1,28 @@
+[Unit]
+Description=reseed39 bloom query server (RAM-resident, behind stunnel) -- hedonic
+After=network.target
+
+[Service]
+Type=simple
+User=mac
+WorkingDirectory=/home/mac/reseed39
+# Localhost only: all real traffic arrives from stunnel on 127.0.0.1.
+Environment=BIND=127.0.0.1
+# Real client IPs in the logs (stunnel sends the PROXY header).
+Environment=PROXY_PROTOCOL=1
+# --resident: pre-warm the whole 14.5 GiB filter into RAM at start (~30s) then keep it
+# resident (MADV_WILLNEED, no MADV_RANDOM). The box has 30 GiB, filter is 14.5 GiB.
+ExecStart=/home/mac/reseed39/server --resident /home/mac/reseed39/alladdrs_classic.blf 8080 /home/mac/reseed39/www
+Restart=always
+RestartSec=3
+# Startup does a 30s sequential pre-warm before it listens; give it headroom.
+TimeoutStartSec=180
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
