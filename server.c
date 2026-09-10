@@ -98,13 +98,16 @@ static void onmessage(ws_cli_conn_t c, const unsigned char *msg, uint64_t size, 
 }
 
 int main(int argc,char**argv){
-  /* Pull out --resident / --prewarm (big-RAM host: pre-warm the filter + drop MADV_RANDOM),
-     compacting argv so the positional args below are unaffected. Also honours RESIDENT=1. */
+  /* Residency flags (compacted out of argv so positional args are unaffected):
+       --resident / --resident=all : pre-warm the whole filter into RAM.
+       --resident=f1               : pre-warm filter1 only; filter2 stays cold on disk (saves ~8 GiB).
+     Env RESIDENT=all|1 or RESIDENT=f1 does the same. */
   { int w=1; for(int i=1;i<argc;i++){
-      if(!strcmp(argv[i],"--resident")||!strcmp(argv[i],"--prewarm")) bloom_resident_mode=1;
+      if(!strcmp(argv[i],"--resident")||!strcmp(argv[i],"--resident=all")||!strcmp(argv[i],"--prewarm")) bloom_resident_mode=1;
+      else if(!strcmp(argv[i],"--resident=f1")) bloom_resident_mode=2;
       else argv[w++]=argv[i]; } argc=w; }
-  if(getenv("RESIDENT") && getenv("RESIDENT")[0]=='1') bloom_resident_mode=1;
-  if(argc<2){ fprintf(stderr,"usage: %s [--resident] FILE.blf [port] [www_root] [allow_ip ...]\n",argv[0]); return 2; }
+  { const char*r=getenv("RESIDENT"); if(r){ if(!strcmp(r,"f1")) bloom_resident_mode=2; else if(r[0]) bloom_resident_mode=1; } }
+  if(argc<2){ fprintf(stderr,"usage: %s [--resident[=all|f1]] FILE.blf [port] [www_root] [allow_ip ...]\n",argv[0]); return 2; }
   uint16_t port = argc>2 ? (uint16_t)atoi(argv[2]) : 8080;
   const char *www = argc>3 ? argv[3] : "./www";   /* GET / on the WS port serves this dir */
   /* Bind address: default localhost (behind stunnel, all real traffic is from 127.0.0.1;

@@ -19,8 +19,12 @@
 #include <time.h>
 #include "bloom_common.h"   /* COPIED from cuda/: bloom_probe, bloom_probe_classic, BLOOM_K */
 
-/* 0: MADV_RANDOM (RAM-starved / slow disk, e.g. oniric). 1: pre-warm + MADV_WILLNEED for a
-   host whose RAM holds the whole filter (set before bloom_host_load; --resident / RESIDENT=1). */
+/* Residency mode (set before bloom_host_load):
+   0 = MADV_RANDOM over the whole file (RAM-starved / slow disk, e.g. oniric).
+   1 = pre-warm the WHOLE filter + MADV_WILLNEED (--resident / RESIDENT=all).
+   2 = pre-warm FILTER1 only; filter2 left cold on disk (MADV_RANDOM). filter2 is read only on a
+       filter1 hit, so it pages in on demand -- saves ~8 GiB resident with NO FPR loss
+       (--resident=f1 / RESIDENT=f1). This is the preferred production mode. */
 static int bloom_resident_mode = 0;
 
 /* ---- COPIED from bip39rxcrack.c: host SHA-256 (filter2 keys on sha256(program)) ---- */
@@ -71,6 +75,43 @@ typedef struct { const uint32_t *prefilter; uint32_t prefilter_nblocks; int f1_c
                  const uint32_t *host_filter; uint32_t host_filter_nblocks; int f2_classic, f2_log2bytes, f2_k2;
                  uint64_t n_addrs; void *base; size_t sz; } BloomSet;
 
+/* touch every page of [p,p+len) so it becomes resident; returns seconds elapsed. */
+static double bloom_prewarm(const uint8_t*p, size_t len){
+  struct timespec w0,w1; clock_gettime(CLOCK_MONOTONIC,&w0);
+  volatile uint8_t acc=0; for(size_t off=0; off<len; off+=4096) acc^=p[off]; (void)acc;
+  clock_gettime(CLOCK_MONOTONIC,&w1);
+  return (w1.tv_sec-w0.tv_sec)+(w1.tv_nsec-w0.tv_nsec)/1e9;
+}
+/* madvise needs a page-aligned start; round down and extend the length to cover the region. */
+static void bloom_madvise(const uint8_t*p, size_t len, int adv){
+  uintptr_t a=(uintptr_t)p, start=a & ~(uintptr_t)4095;
+  (void)madvise((void*)start, len+(a-start), adv);
+}
+/* Apply the residency mode after the header is parsed (so filter1's byte range is known).
+   NOTE: never set MADV_RANDOM on a region we are about to pre-warm -- RANDOM disables readahead,
+   turning the sequential warm into millions of synchronous 4 KiB faults. WILLNEED (or the default)
+   lets readahead do the bulk load fast. RANDOM is only for regions we deliberately leave cold. */
+static void bloom_apply_residency(const BloomSet*A){
+  const uint8_t *f1=(const uint8_t*)A->prefilter; size_t f1len=(size_t)A->prefilter_nblocks*32u;
+  const uint8_t *f2=(const uint8_t*)A->host_filter; size_t f2len=(const uint8_t*)A->base+A->sz-f2;
+  if(bloom_resident_mode==0){
+    /* RAM-starved / slow-disk host (e.g. oniric): scattered probes, suppress wasteful readahead. */
+    bloom_madvise((const uint8_t*)A->base, A->sz, MADV_RANDOM);
+  } else if(bloom_resident_mode==1){
+    bloom_madvise((const uint8_t*)A->base, A->sz, MADV_WILLNEED);
+    double dt=bloom_prewarm((const uint8_t*)A->base, A->sz);
+    fprintf(stderr,"bloom: resident=all -- pre-warmed %.2f GiB in %.1fs (%.0f MiB/s)\n",
+            A->sz/1073741824.0, dt, A->sz/1048576.0/(dt>0?dt:1));
+  } else if(bloom_resident_mode==2){
+    bloom_madvise(f1, f1len, MADV_WILLNEED);      /* readahead-friendly for the warm */
+    double dt=bloom_prewarm(f1, f1len);
+    bloom_madvise(f2, f2len, MADV_RANDOM);        /* filter2 stays cold: no readahead on demand faults */
+    fprintf(stderr,"bloom: resident=f1 -- pre-warmed filter1 %.2f GiB in %.1fs (%.0f MiB/s); "
+            "filter2 %.2f GiB left cold (paged from disk on hits)\n",
+            f1len/1073741824.0, dt, f1len/1048576.0/(dt>0?dt:1), f2len/1073741824.0);
+  }
+}
+
 /* mmap a .blf read-only and set the filter pointers (mirrors load_bloom_file's pointer
    setup; drops the GPU-hive content hash + the FPR print). Returns 0 on success. */
 static int bloom_host_load(const char*path, BloomSet*A){
@@ -80,24 +121,9 @@ static int bloom_host_load(const char*path, BloomSet*A){
   void*base=mmap(0,sz,PROT_READ,MAP_SHARED,fd,0); close(fd);
   if(base==MAP_FAILED){ fprintf(stderr,"bloom: mmap %s failed\n",path); return 1; }
   A->base=base; A->sz=sz;
-  if(bloom_resident_mode){
-    /* Big-RAM host: the whole filter fits in memory. Ask for it, then pre-warm by touching
-       every page so it is fully resident BEFORE the first query (no cold faults on early
-       traffic). No MADV_RANDOM here -- we WANT it cached and readahead helps the bulk warm. */
-    (void)madvise(base, sz, MADV_WILLNEED);
-    struct timespec w0,w1; clock_gettime(CLOCK_MONOTONIC,&w0);
-    volatile uint8_t acc=0; const uint8_t*b=(const uint8_t*)base;
-    for(size_t off=0; off<sz; off+=4096) acc ^= b[off];
-    (void)acc; clock_gettime(CLOCK_MONOTONIC,&w1);
-    double dt=(w1.tv_sec-w0.tv_sec)+(w1.tv_nsec-w0.tv_nsec)/1e9;
-    fprintf(stderr,"bloom: resident mode -- pre-warmed %.2f GiB into RAM in %.1fs (%.0f MiB/s)\n",
-            sz/1073741824.0, dt, sz/1048576.0/(dt>0?dt:1));
-  } else {
-    /* RAM-starved / slow-disk host (e.g. oniric): queries are scattered random probes, so
-       default readahead just faults neighbour pages we never read and evicts useful cache.
-       MADV_RANDOM measurably cuts wasted I/O. Advisory: ignore errors. */
-    (void)madvise(base, sz, MADV_RANDOM);
-  }
+  /* Residency (MADV_RANDOM vs WILLNEED + pre-warm) is applied in bloom_apply_residency() below,
+     after the header parse locates filter1 -- crucially AFTER, so we never mark a to-be-warmed
+     region RANDOM (which would disable readahead and cripple the warm). */
   uint32_t magic=*(uint32_t*)base;
   if(magic==BLF3_MAGIC){
     Blf3Header*h=(Blf3Header*)base; int f1_classic=(h->rsv==1);
@@ -111,6 +137,7 @@ static int bloom_host_load(const char*path, BloomSet*A){
     fprintf(stderr,"bloom: loaded %s (BLF3) -- %llu addresses, filter1 %.2f GiB %s, filter2 %.2f GiB classic k=%u\n",
             path,(unsigned long long)h->n_addrs,(double)f1b/1073741824.0,f1_classic?"classic":"blocked",
             (double)((size_t)1<<h->f2_log2bytes)/1073741824.0,h->k2);
+    bloom_apply_residency(A);
     return 0;
   }
   if(magic==BLF_MAGIC){
@@ -121,6 +148,7 @@ static int bloom_host_load(const char*path, BloomSet*A){
     A->host_filter=(const uint32_t*)((uint8_t*)base+sizeof(BlfHeader)+f1b); A->host_filter_nblocks=h->nblocks2; A->f2_classic=0;
     A->n_addrs=h->n_addrs;
     fprintf(stderr,"bloom: loaded %s (BLF2, legacy) -- %llu addresses\n",path,(unsigned long long)h->n_addrs);
+    bloom_apply_residency(A);
     return 0;
   }
   fprintf(stderr,"bloom: %s not a .blf (bad magic)\n",path); return 1;

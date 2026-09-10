@@ -10,9 +10,9 @@ WorkingDirectory=/home/mac/reseed39
 Environment=BIND=127.0.0.1
 # Real client IPs in the logs (stunnel sends the PROXY header).
 Environment=PROXY_PROTOCOL=1
-# --resident: pre-warm the whole 14.5 GiB filter into RAM at start (~30s) then keep it
-# resident (MADV_WILLNEED, no MADV_RANDOM). The box has 30 GiB, filter is 14.5 GiB.
-ExecStart=/home/mac/reseed39/server --resident /home/mac/reseed39/alladdrs_classic.blf 8080 /home/mac/reseed39/www
+# --resident=f1: pre-warm ONLY filter1 (6.5 GiB) into RAM; filter2 (8 GiB) stays cold on disk
+# and pages in on the rare hit. Saves ~8 GiB resident for other coins' filters, no FPR loss.
+ExecStart=/home/mac/reseed39/server --resident=f1 /home/mac/reseed39/alladdrs_classic.blf 8080 /home/mac/reseed39/www
 Restart=always
 RestartSec=3
 # Startup does a 30s sequential pre-warm before it listens; give it headroom.

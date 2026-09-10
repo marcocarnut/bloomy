@@ -101,9 +101,10 @@ onmessage = async (e) => {
   }
 
   // BLOOM DERIVE: no target — derive EVERY purpose's program for each seed and
-  // return the flat hex (batched EC), so the main thread can stream them to the
-  // bloom server. Order is purpose -> change -> idx -> seed i; the main thread
-  // replays the SAME nested order to map each hex back to its candidate.
+  // return them ALREADY JOINED into one newline-separated frame string, ready for the
+  // main thread to ws.send() as-is (no per-program work on the main thread). Order is
+  // purpose -> change -> idx -> seed i; on a HIT the main thread re-derives the (still
+  // in-flight) candidates to identify which one produced the flagged program.
   if (d.type === 'bloomderive') {
     C = C || globalThis.BIP39Crypto;
     const seeds = new Uint8Array(d.seedsBuf), n = d.n;
@@ -122,7 +123,7 @@ onmessage = async (e) => {
         }
       }
     }
-    postMessage({ type:'bloomderived', batchId:d.batchId, hexes });
+    postMessage({ type:'bloomderived', batchId:d.batchId, text:hexes.join('\n'), progs:hexes.length });   // one string -> cheap structured clone + zero main-thread per-program work
     return;
   }
 
