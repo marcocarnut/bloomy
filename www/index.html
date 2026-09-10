@@ -2753,9 +2753,29 @@ async function gateWords(mnemonics, passphrase){
   }
   return out;
 }
+// Per-DEVICE GPU seed self-test (cached). Some GPUs/drivers miscompute the WGSL
+// PBKDF2 seed -- especially the >128-byte (2-block key pre-hash) path used by longer
+// mnemonics -- while others are byte-exact. A wrong seed silently corrupts every
+// result, so before trusting the GPU for seeding we compare it to the CPU on a fixed
+// set spanning the short AND long (>128B) paths. If ANY lane disagrees, the GPU is
+// untrustworthy on this device and callers must fall back to CPU seeding. Runs once.
+let _seedTrust = null;
+const _SEEDTEST = [
+  'legal winner thank year wave sausage worth useful legal winner thank yellow',                                             // 12w, 75B
+  'letter advice cage absurd amount doctor acoustic avoid letter advice cage above',                                         // 12w
+  'trial ability gloom dragon try dirt rapid crawl soon fatal tool chronic rapid ladder salmon palace expect enrich helmet truth receive mercy horror arrow',   // 24w, 152B (>128 -> key pre-hash)
+  'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art' ];   // 24w, 187B (>128 -> key pre-hash)
+async function verifySeeds(){
+  if(_seedTrust!==null) return _seedTrust;
+  try{ const r=await gateWords(_SEEDTEST,''); _seedTrust = r.every(x=>x.ok);
+    if(!_seedTrust){ try{ console.warn('[gpucrack] GPU seed self-test FAILED (this device miscomputes WGSL seeds):', r.filter(x=>!x.ok).map(x=>x.len+'B')); }catch(_){} } }
+  catch(e){ _seedTrust = false; }
+  return _seedTrust;
+}
+function seedTrustCached(){ return _seedTrust; }   // null until verifySeeds() has run
 
 window.GpuCrack = { initGpu, gpuSeeds, benchmark, crackXpub, crackAddress, MAXSALT,
-  initGpuWords, gpuSeedsWords, crackWordsGpu, gateWords, getGpuInfo, getGpuDetails,
+  initGpuWords, gpuSeedsWords, crackWordsGpu, gateWords, verifySeeds, seedTrustCached, getGpuInfo, getGpuDetails,
   setBatchEC:(b)=>{ BATCH_EC=!!b; }, getBatchEC:()=>BATCH_EC,
   setSeedChunk:_setSeedChunk, getSeedChunk:()=>_seedChunkN,   // 0 = auto (mobile-aware)
   setMobChunk:_setMobChunk, getMobChunk:()=>_mobChunk,        // probe-chosen mobile lanes/dispatch
@@ -2860,6 +2880,7 @@ const STRINGS = {
     bloomNoPurpose: "Tick at least one BIP44/49/84/86 derivation to search (Electrum isn't supported in the all-addresses search).",
     bloomNoMatch: "no used address matched among the candidates searched.",
     bloomRejected: "⚠ %n candidate(s) matched the server but FAILED CPU re-verification and were rejected — your GPU is producing incorrect results for this pattern. Switch the engine to CPU for trustworthy results on this device.",
+    bloomGpuBad: "⚠ This device's GPU failed a seed self-test (it miscomputes some values), so the search is using the CPU instead — slower, but correct.",
     bloomFound: "FOUND a used address!",
     tAddress: "Address", tXpub: "xpub",
     noteXpub: "xpub: chain-code compare, no elliptic-curve work in the hot loop — the lean case.",
@@ -3017,6 +3038,7 @@ const STRINGS = {
     bloomNoPurpose: "Marque ao menos uma derivação BIP44/49/84/86 para buscar (Electrum não é suportado na busca por todos os endereços).",
     bloomNoMatch: "nenhum endereço já usado correspondeu entre os candidatos buscados.",
     bloomRejected: "⚠ %n candidato(s) corresponderam no servidor mas FALHARAM na re-verificação na CPU e foram rejeitados — sua GPU está produzindo resultados incorretos para este padrão. Troque o motor para CPU para resultados confiáveis neste dispositivo.",
+    bloomGpuBad: "⚠ A GPU deste dispositivo falhou num autoteste de seed (calcula alguns valores errado), então a busca está usando a CPU — mais lenta, porém correta.",
     bloomFound: "ACHOU um endereço já usado!",
     tAddress: "Endereço", tXpub: "xpub",
     noteXpub: "xpub: comparação de chain-code, sem curva elíptica no laço quente — o caso leve.",
@@ -3132,8 +3154,8 @@ const $$ = s => Array.from(document.querySelectorAll(s));
 // the bundler sets window.__CRACKWORKER_URL to a Blob URL carrying the inlined
 // worker (multicore stays alive when the page is SERVED; a file:// page can't
 // start a worker and falls back to single-thread -- serve locally to keep it).
-const CRACKWORKER_URL = (typeof window!=='undefined' && window.__CRACKWORKER_URL) || 'crackworker.js?v=b143';
-const APP_VERSION = 'b143';   // bumped with the cache stamp; tags shared benchmark JSON so DB rows stay comparable across methodology changes
+const CRACKWORKER_URL = (typeof window!=='undefined' && window.__CRACKWORKER_URL) || 'crackworker.js?v=b147';
+const APP_VERSION = 'b147';   // bumped with the cache stamp; tags shared benchmark JSON so DB rows stay comparable across methodology changes
 let RXE, VALIDATOR, ENGLISH = [];   // ENGLISH: wordlist, passed to crack workers
 const registered = new Map();
 let liveSets = [];
@@ -3609,7 +3631,7 @@ function setLang(l){
     const txt = globalThis.__ENGLISH_TXT || await (await fetch('../data/english.txt')).text();   // bundle inlines the wordlist
     const englishWords = txt.trim().split(/\r?\n/);
     ENGLISH = englishWords;                       // shared with crack workers
-    RXE = await RxeCoreAPI.loadRxeCore({ moduleArgs:{ locateFile:p=>'../wasm/'+p+'?v=b143' } });
+    RXE = await RxeCoreAPI.loadRxeCore({ moduleArgs:{ locateFile:p=>'../wasm/'+p+'?v=b147' } });
     RXE.registerDict('bip39', englishWords);
     registered.set('bip39', englishWords.length);
     // Aliases so older patterns/links keep resolving: [:bip39-en:] / [:bip39en:] / [:en:] / [:english:].
@@ -4491,7 +4513,14 @@ async function startBloomCrack(){
   const _pmap={bip44:44,bip49:49,bip84:84,bip86:86};
   const PURPOSES=$$('#purposes input').filter(c=>c.checked).map(c=>_pmap[c.dataset.p]).filter(x=>x!==undefined);
   if(!PURPOSES.length){ set.free(); msg.textContent=t('bloomNoPurpose'); return; }
-  const gpu = segVal('#backendSeg','data-b')==='gpu' && window.GpuCrack && navigator.gpu && mode==='words';
+  let gpu = segVal('#backendSeg','data-b')==='gpu' && window.GpuCrack && navigator.gpu && mode==='words';
+  // ⭐ Trust the GPU for seeding ONLY if it passes a byte-exact self-test vs the CPU
+  // (some GPUs/drivers miscompute the WGSL seed, esp. the >128-byte path -> corrupt
+  // results). On failure, fall back to CPU seeds (correct everywhere) and tell the user.
+  if(gpu && window.GpuCrack.verifySeeds){
+    let ok=true; try{ ok=await window.GpuCrack.verifySeeds(); }catch(e){ ok=false; }
+    if(!ok){ gpu=false; try{ msg.textContent=t('bloomGpuBad'); }catch(_){} }
+  }
   // Same-origin by default (prod: bundle + WS served from one origin). window.__BLOOM_WS
   // is a DEV-ONLY override to point at a cross-origin dev server; honored only on
   // localhost so a production page can never be redirected to send programs elsewhere.
@@ -4508,7 +4537,13 @@ async function startBloomCrack(){
   _bloomCtl={ togglePause:()=>{ paused=!paused; btn.textContent=paused?t('crackResume'):t('crackPause'); btn.classList.toggle('resuming',paused); } };
   const setEndButtons=()=>{ btn.textContent=t('crackBtn'); btn.classList.remove('resuming'); const sb=$('#crackStopBtn'); if(sb){ sb.textContent=t('crackReset'); sb.style.display=''; } };
   const hexMap=new Map();                       // hex -> context, for HIT lookup
-  let sent=0, finished=false, workers=[]; const unacked=[], MAXINFLIGHT=16, FRAME=2000, t0=performance.now();
+  let sent=0, finished=false, workers=[]; const unacked=[], FRAME=2000, t0=performance.now();
+  // Flow control: a slow-start congestion window (frames in flight) that OPENS as ACKs
+  // come back cleanly, plus a socket-buffer cap so the stream paces to the actual
+  // network ("flow to the slowest component") instead of a fixed ACK-round-trip window.
+  // cwnd also bounds the pruned-on-ACK hexMap; it stays small on a slow link (fewer
+  // ACKs -> slower open), so memory naturally tracks the link. Reset per (re)connect.
+  let cwnd=16; const CWND_MAX=128, BUFCAP=1<<18;   // start at the old fixed window (never worse), open to 128; 256 KiB socket-buffer cap
   const cleanup=()=>{ try{if(_progTimer){clearInterval(_progTimer);_progTimer=null;}}catch(_){} try{set.free();}catch(_){} try{ if(ws){ ws.onclose=null; ws.close(); } }catch(_){} workers.forEach(w=>{try{w.terminate();}catch(_){}}); cracking=false; };
   // Report a HIT -- but ONLY after re-deriving the program on the CPU and confirming
   // it matches the hex the server flagged. A recovery tool must never announce a
@@ -4546,16 +4581,18 @@ async function startBloomCrack(){
     prog.innerHTML='<div>'+esc(t('bloomReconnecting').replace('%n',reconnects))+'</div>';
     setTimeout(()=>{ if(finished||_crackAbort||!cracking) return; try{ ws=new WebSocket(url); wireWs(); }catch(e){ reconnect(); } }, Math.min(800*reconnects,5000)); };
   const wireWs=()=>{
-    ws.onopen=()=>{ connected=true; reconnects=0;
+    ws.onopen=()=>{ connected=true; reconnects=0; cwnd=16;   // slow-start (re)start: reopen the window from the base
       if(prog.textContent===t('bloomConnecting')) prog.textContent='';
       for(const h of unacked){ try{ ws.send(h.join('\n')); }catch(_){} }   // re-send in-flight frames after a drop
       if(!sweepStarted){ sweepStarted=true; runSweep(); } };
     ws.onmessage=(ev)=>{ for(const ln of String(ev.data).split('\n')){ if(!ln) continue;
       if(ln.startsWith('HIT ')){ const hh=ln.slice(4).trim(); const ctx=hexMap.get(hh); if(ctx && !finished){ if(showHit(ctx, hh)) return; } }   // verified hit stops; an unverifiable one is rejected and we keep going
-      else if(ln.startsWith('ACK ')){ const f=unacked.shift(); if(f){ ackedProgs+=f.length; for(const h of f) hexMap.delete(h); } } } };   // one ACK per frame (in order): count programs + prune the now-processed hexes (HIT always precedes its frame's ACK, so this is safe and keeps hexMap bounded to the in-flight window)
+      else if(ln.startsWith('ACK ')){ const f=unacked.shift(); if(f){ ackedProgs+=f.length; for(const h of f) hexMap.delete(h);
+        if(cwnd<CWND_MAX) cwnd += (cwnd<64?4:1); } } } };   // ACK: count + prune (HIT precedes its frame's ACK, so safe + keeps hexMap bounded); and OPEN the window (slow-start: +4 while ramping, +1 near the cap)
     ws.onerror=()=>{};                                     // onclose drives teardown/reconnect
     ws.onclose=()=>{ connected=false; if(finished||_crackAbort||!cracking) return; reconnect(); }; };
-  const waitSendable=async()=>{ while((paused || !connected || unacked.length>=MAXINFLIGHT) && cracking && !finished) await new Promise(r=>setTimeout(r,5)); };
+  const sendable=()=> !paused && connected && unacked.length<cwnd && (!ws || ws.bufferedAmount<=BUFCAP);   // window has room AND the socket isn't backed up
+  const waitSendable=async()=>{ while(!sendable() && cracking && !finished) await new Promise(r=>setTimeout(r,5)); };
   const sendFrame=(h)=>{ if(!h.length) return; try{ ws.send(h.join('\n')); }catch(_){} unacked.push(h); sent+=h.length; };
   let swept=0, dispatched=0, derived=0, hashed=0, validSwept=0, ackedProgs=0, _falsePos=0;
   // Progress is PACED TO THE WEBSOCKET STREAM, not to the bursty EC-batch completions:
@@ -4698,7 +4735,7 @@ async function startBloomCrack(){
           const {b,seeds}=seededQ.shift();
           for(let off=0; off<b.length && cracking && !finished; off+=SHARD){
             // gate on a free worker, the WS send window, AND the confirm backlog (don't let EC race past what the server confirms)
-            while((paused || !connected || idle.length===0 || unacked.length>=MAXINFLIGHT || (hashed - ackedProgs/PPC) > BACKLOG) && cracking && !finished) await new Promise(r=>setTimeout(r,3));
+            while((idle.length===0 || !sendable() || (hashed - ackedProgs/PPC) > BACKLOG) && cracking && !finished) await new Promise(r=>setTimeout(r,3));
             if(!cracking||finished) break;
             const cs=b.slice(off,off+SHARD), seg=seeds.subarray(off*64,(off+cs.length)*64);
             const w=idle.shift(), id=dispatched++; pending.set(id,cs); ecInFlight++;
@@ -4850,7 +4887,15 @@ async function onCrack(){
   cracking=true; _crackAbort=false; _crackPaused=false; btn.textContent=t('crackPause'); btn.classList.remove('resuming');
   { const sb=$('#crackStopBtn'); if(sb){ sb.textContent=t('crackStopBtn'); sb.style.display=''; } }
   msg.textContent=t('crackRunning'); res.innerHTML=''; prog.textContent='';
-  const gpu = segVal('#backendSeg','data-b')==='gpu' && window.GpuCrack && navigator.gpu;
+  let gpu = segVal('#backendSeg','data-b')==='gpu' && window.GpuCrack && navigator.gpu;
+  // Trust the GPU for seeding only if it passes a byte-exact self-test vs the CPU.
+  // Some GPUs/drivers miscompute the WGSL seed (esp. the >128-byte mnemonic path) and
+  // would then SILENTLY MISS the real answer here (a wrong seed -> wrong address ->
+  // never matches the target). Fall back to CPU (correct everywhere) + tell the user.
+  if(gpu && window.GpuCrack.verifySeeds){
+    let ok=true; try{ ok=await window.GpuCrack.verifySeeds(); }catch(e){ ok=false; }
+    if(!ok){ gpu=false; try{ msg.textContent=t('bloomGpuBad'); }catch(_){} }
+  }
   const nchange=Math.max(1,parseInt($('#change').value,10)||1);
   const changes=nchange>=2?[0,1]:[0];
   const gapN=Math.max(1,parseInt($('#gap').value,10)||1);

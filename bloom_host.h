@@ -16,7 +16,12 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <time.h>
 #include "bloom_common.h"   /* COPIED from cuda/: bloom_probe, bloom_probe_classic, BLOOM_K */
+
+/* 0: MADV_RANDOM (RAM-starved / slow disk, e.g. oniric). 1: pre-warm + MADV_WILLNEED for a
+   host whose RAM holds the whole filter (set before bloom_host_load; --resident / RESIDENT=1). */
+static int bloom_resident_mode = 0;
 
 /* ---- COPIED from bip39rxcrack.c: host SHA-256 (filter2 keys on sha256(program)) ---- */
 #define ROR32(x,n) (((x)>>(n))|((x)<<(32-(n))))
@@ -75,10 +80,24 @@ static int bloom_host_load(const char*path, BloomSet*A){
   void*base=mmap(0,sz,PROT_READ,MAP_SHARED,fd,0); close(fd);
   if(base==MAP_FAILED){ fprintf(stderr,"bloom: mmap %s failed\n",path); return 1; }
   A->base=base; A->sz=sz;
-  /* Queries are scattered random probes; default readahead just faults neighbour
-     pages we never read and evicts useful cache. On a RAM-starved / slow-disk host
-     (e.g. oniric) MADV_RANDOM measurably cuts wasted I/O. Advisory: ignore errors. */
-  (void)madvise(base, sz, MADV_RANDOM);
+  if(bloom_resident_mode){
+    /* Big-RAM host: the whole filter fits in memory. Ask for it, then pre-warm by touching
+       every page so it is fully resident BEFORE the first query (no cold faults on early
+       traffic). No MADV_RANDOM here -- we WANT it cached and readahead helps the bulk warm. */
+    (void)madvise(base, sz, MADV_WILLNEED);
+    struct timespec w0,w1; clock_gettime(CLOCK_MONOTONIC,&w0);
+    volatile uint8_t acc=0; const uint8_t*b=(const uint8_t*)base;
+    for(size_t off=0; off<sz; off+=4096) acc ^= b[off];
+    (void)acc; clock_gettime(CLOCK_MONOTONIC,&w1);
+    double dt=(w1.tv_sec-w0.tv_sec)+(w1.tv_nsec-w0.tv_nsec)/1e9;
+    fprintf(stderr,"bloom: resident mode -- pre-warmed %.2f GiB into RAM in %.1fs (%.0f MiB/s)\n",
+            sz/1073741824.0, dt, sz/1048576.0/(dt>0?dt:1));
+  } else {
+    /* RAM-starved / slow-disk host (e.g. oniric): queries are scattered random probes, so
+       default readahead just faults neighbour pages we never read and evicts useful cache.
+       MADV_RANDOM measurably cuts wasted I/O. Advisory: ignore errors. */
+    (void)madvise(base, sz, MADV_RANDOM);
+  }
   uint32_t magic=*(uint32_t*)base;
   if(magic==BLF3_MAGIC){
     Blf3Header*h=(Blf3Header*)base; int f1_classic=(h->rsv==1);

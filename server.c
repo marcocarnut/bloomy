@@ -98,7 +98,13 @@ static void onmessage(ws_cli_conn_t c, const unsigned char *msg, uint64_t size, 
 }
 
 int main(int argc,char**argv){
-  if(argc<2){ fprintf(stderr,"usage: %s FILE.blf [port] [www_root] [allow_ip ...]\n",argv[0]); return 2; }
+  /* Pull out --resident / --prewarm (big-RAM host: pre-warm the filter + drop MADV_RANDOM),
+     compacting argv so the positional args below are unaffected. Also honours RESIDENT=1. */
+  { int w=1; for(int i=1;i<argc;i++){
+      if(!strcmp(argv[i],"--resident")||!strcmp(argv[i],"--prewarm")) bloom_resident_mode=1;
+      else argv[w++]=argv[i]; } argc=w; }
+  if(getenv("RESIDENT") && getenv("RESIDENT")[0]=='1') bloom_resident_mode=1;
+  if(argc<2){ fprintf(stderr,"usage: %s [--resident] FILE.blf [port] [www_root] [allow_ip ...]\n",argv[0]); return 2; }
   uint16_t port = argc>2 ? (uint16_t)atoi(argv[2]) : 8080;
   const char *www = argc>3 ? argv[3] : "./www";   /* GET / on the WS port serves this dir */
   /* Bind address: default localhost (behind stunnel, all real traffic is from 127.0.0.1;

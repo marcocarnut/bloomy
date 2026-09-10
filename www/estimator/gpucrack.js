@@ -759,9 +759,29 @@ async function gateWords(mnemonics, passphrase){
   }
   return out;
 }
+// Per-DEVICE GPU seed self-test (cached). Some GPUs/drivers miscompute the WGSL
+// PBKDF2 seed -- especially the >128-byte (2-block key pre-hash) path used by longer
+// mnemonics -- while others are byte-exact. A wrong seed silently corrupts every
+// result, so before trusting the GPU for seeding we compare it to the CPU on a fixed
+// set spanning the short AND long (>128B) paths. If ANY lane disagrees, the GPU is
+// untrustworthy on this device and callers must fall back to CPU seeding. Runs once.
+let _seedTrust = null;
+const _SEEDTEST = [
+  'legal winner thank year wave sausage worth useful legal winner thank yellow',                                             // 12w, 75B
+  'letter advice cage absurd amount doctor acoustic avoid letter advice cage above',                                         // 12w
+  'trial ability gloom dragon try dirt rapid crawl soon fatal tool chronic rapid ladder salmon palace expect enrich helmet truth receive mercy horror arrow',   // 24w, 152B (>128 -> key pre-hash)
+  'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art' ];   // 24w, 187B (>128 -> key pre-hash)
+async function verifySeeds(){
+  if(_seedTrust!==null) return _seedTrust;
+  try{ const r=await gateWords(_SEEDTEST,''); _seedTrust = r.every(x=>x.ok);
+    if(!_seedTrust){ try{ console.warn('[gpucrack] GPU seed self-test FAILED (this device miscomputes WGSL seeds):', r.filter(x=>!x.ok).map(x=>x.len+'B')); }catch(_){} } }
+  catch(e){ _seedTrust = false; }
+  return _seedTrust;
+}
+function seedTrustCached(){ return _seedTrust; }   // null until verifySeeds() has run
 
 window.GpuCrack = { initGpu, gpuSeeds, benchmark, crackXpub, crackAddress, MAXSALT,
-  initGpuWords, gpuSeedsWords, crackWordsGpu, gateWords, getGpuInfo, getGpuDetails,
+  initGpuWords, gpuSeedsWords, crackWordsGpu, gateWords, verifySeeds, seedTrustCached, getGpuInfo, getGpuDetails,
   setBatchEC:(b)=>{ BATCH_EC=!!b; }, getBatchEC:()=>BATCH_EC,
   setSeedChunk:_setSeedChunk, getSeedChunk:()=>_seedChunkN,   // 0 = auto (mobile-aware)
   setMobChunk:_setMobChunk, getMobChunk:()=>_mobChunk,        // probe-chosen mobile lanes/dispatch
