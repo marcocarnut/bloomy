@@ -23,6 +23,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <time.h>
+#include <pthread.h>
 #include "bloom_common.h"   /* bloom_insert_classic, bloom_probe_classic, bloom_insert, bloom_probe, BLOOM_K */
 #include "bloom_host.h"     /* sha256_host, classic_bits, classic_probe, Blf3Header/BLF3_MAGIC, BloomSet, bloom_host_load, bloom_host_member */
 
@@ -118,9 +120,73 @@ static double blf_fpr(unsigned long long nblocks,unsigned long long n){
 static int gib_to_log2bytes(double gib){ if(gib<=0) return 0; int e=(int)lround(log2(gib*1073741824.0)); if(e<3)e=3; if(e>40)e=40; return e; }
 static uint32_t gib_to_nblocks(double gib){ if(gib<=0) return 0; double b=gib*33554432.0; int e=(int)lround(log2(b)); if(e<4)e=4; if(e>30)e=30; return 1u<<e; }
 
-/* ============ build (verbatim classic1/blocked path from build_bloom_file) ============ */
+/* ===== atomic bit-set variants, used ONLY on the parallel (-j>1) build path. Same bit
+ * positions as the serial inserts, but __atomic_fetch_or so concurrent workers never lose a
+ * set bit (a lost bit = false negative). OR is commutative+idempotent, so the resulting
+ * filter is BIT-IDENTICAL to the serial build regardless of thread interleaving. The serial
+ * (-j1) path keeps the plain `|=` inserts above, untouched. ===== */
+static void classic_insert_atomic(uint8_t*f,const uint8_t*prog,int log2bytes,int k2){
+  unsigned long long a,b; classic_bits(prog,&a,&b); unsigned long long mask=((unsigned long long)1<<(log2bytes+3))-1;
+  for(int i=0;i<k2;i++){ unsigned long long p=(a+(unsigned long long)i*b)&mask; __atomic_fetch_or(&f[p>>3],(uint8_t)(1u<<(p&7)),__ATOMIC_RELAXED); } }
+static void bloom_insert_classic_atomic(unsigned int*filter,const unsigned char*P,unsigned long long bits,int k){
+  unsigned char*fb=(unsigned char*)filter; unsigned long long b,a=bloom_ab_seed(P,&b);
+  unsigned long long p=a%bits, step=b%bits;
+  for(int i=0;i<k;i++){ __atomic_fetch_or(&fb[p>>3],(unsigned char)(1u<<(p&7)),__ATOMIC_RELAXED); p+=step; if(p>=bits)p-=bits; } }
+static void bloom_insert_atomic(unsigned int*filter,const unsigned char*P,unsigned int nblocks_mask){
+  unsigned int*bl=filter+(unsigned long long)bloom_block(P,nblocks_mask)*8ull;
+  for(int j=0;j<BLOOM_K;j++){ unsigned int pos=P[4+j]; __atomic_fetch_or(&bl[pos>>5],(1u<<(pos&31u)),__ATOMIC_RELAXED); } }
+
+/* purpose value <-> compact index, for deterministic (serial-matching) purposes[] ordering. */
+static const int PURP_VAL[4]={44,49,84,86};
+static int purp_idx(int pu){ switch(pu){case 44:return 0;case 49:return 1;case 84:return 2;case 86:return 3;} return -1; }
+
+static unsigned long long g_prog=0, g_done=0;   /* parallel progress + finished-worker count */
+
+typedef struct {
+  const uint8_t*m; size_t fsz, lo, hi;                 /* input mmap + this worker's byte range */
+  uint32_t*f1; uint8_t*f2; unsigned long long f1bits; int classic1; unsigned int nb1m; int k1; int log2b2; int k2;
+  FILE*of; pthread_mutex_t*of_lock;
+  long n, bad, skip_wsh, skip_other;
+  long long pfirst[4];                                 /* first byte-offset each purpose was seen at */
+} Worker;
+
+/* Process every line whose START byte is in [lo,hi): if lo>0, skip to just after the newline
+ * at/at-or-after lo-1 (that partial line belongs to the previous worker, which reads past its
+ * hi to finish it); stop when a line starts >= hi. No splits, no dupes, every line once. */
+static void*worker_fn(void*arg){
+  Worker*w=(Worker*)arg; const uint8_t*m=w->m; size_t fsz=w->fsz, hi=w->hi;
+  for(int t=0;t<4;t++) w->pfirst[t]=-1;
+  size_t i;
+  if(w->lo==0) i=0; else { size_t p=w->lo-1; while(p<fsz && m[p]!='\n') p++; i=(p<fsz)?p+1:fsz; }
+  long localprog=0;
+  while(i<hi && i<fsz){
+    size_t j=i; while(j<fsz && m[j]!='\n') j++;              /* line = m[i..j) */
+    size_t L=j-i; if(L>255) L=255;
+    char buf[256]; memcpy(buf,m+i,L); buf[L]=0;
+    char*s=buf; while(*s==' '||*s=='\t')s++;
+    char*e=s+strlen(s); while(e>s&&(e[-1]=='\n'||e[-1]=='\r'||e[-1]==' '||e[-1]=='\t')) *--e=0;
+    if(*s){
+      uint8_t pr[32]; memset(pr,0,32); int pl,pu;
+      if(decode_address(s,pr,&pl,&pu)){
+        if(!strncmp(s,"bc1",3)) w->skip_wsh++;
+        else { w->skip_other++; if(w->of){ pthread_mutex_lock(w->of_lock); fprintf(w->of,"%s\n",s); pthread_mutex_unlock(w->of_lock);} }
+        w->bad++;
+      } else { (void)pl;
+        if(w->classic1) bloom_insert_classic_atomic(w->f1,pr,w->f1bits,w->k1); else bloom_insert_atomic(w->f1,pr,w->nb1m);
+        classic_insert_atomic(w->f2,pr,w->log2b2,w->k2);
+        int pi=purp_idx(pu); if(pi>=0 && w->pfirst[pi]<0) w->pfirst[pi]=(long long)i;
+        w->n++; if((++localprog & 0xFFFF)==0) __atomic_fetch_add(&g_prog,0x10000ull,__ATOMIC_RELAXED);
+      }
+    }
+    i=(j<fsz)?j+1:fsz;
+  }
+  __atomic_fetch_add(&g_done,1ull,__ATOMIC_RELEASE);
+  return 0;
+}
+
+/* ============ build (serial classic1/blocked path from build_bloom_file; + parallel -j) ============ */
 static int cmd_build(const char*infile,const char*outfile,unsigned long long n_hint,double fpr,
-                     double gib1,double gib2,const char*other_file,int classic1){
+                     double gib1,double gib2,const char*other_file,int classic1,int jobs){
   uint32_t nb1; int log2b2,k2; (void)fpr;
   FILE*of=0; if(other_file){ of=fopen(other_file,"w"); if(!of) fprintf(stderr,"warning: cannot write --other %s (continuing)\n",other_file); }
   if(gib1>0 && gib2>0){
@@ -144,22 +210,80 @@ static int cmd_build(const char*infile,const char*outfile,unsigned long long n_h
   if(n_hint){ double fpr1=classic1?classic_fpr(f1bits,n_hint,k1):blf_fpr(nb1,n_hint); double efpr0=fpr1*classic_fpr((unsigned long long)f2b*8,n_hint,k2);
     fprintf(stderr,"build: filter1 %.2f GiB %s k1=%d + filter2 %.2f GiB classic k=%d, est FPR ~%.1e (VERIFY with stat), streaming...\n",
             (double)f1b/1073741824.0,f1kind,k1,(double)f2b/1073741824.0,k2,efpr0); }
-  FILE*f=(!strcmp(infile,"-"))?stdin:fopen(infile,"r"); if(!f){ fprintf(stderr,"cannot open %s\n",infile); munmap(obase,total); unlink(outfile); if(of)fclose(of); return 2; }
-  long n=0,bad=0,skip_wsh=0,skip_other=0; uint32_t purposes[8]; int npurp=0; char line[256];
-  double t0=now_s(),tlast=t0;
+
+  long n=0,bad=0,skip_wsh=0,skip_other=0; uint32_t purposes[8]; int npurp=0;
+  double t0=now_s();
   g_decode_quiet=1;
-  while(fgets(line,sizeof line,f)){ char*s=line; while(*s==' '||*s=='\t')s++;
-    char*e=s+strlen(s); while(e>s&&(e[-1]=='\n'||e[-1]=='\r'||e[-1]==' '||e[-1]=='\t')) *--e=0; if(!*s) continue;
-    uint8_t pr[32]; memset(pr,0,32); int pl,pu; if(decode_address(s,pr,&pl,&pu)){
-      if(!strncmp(s,"bc1",3)) skip_wsh++; else { skip_other++; if(of) fprintf(of,"%s\n",s); }
-      bad++; continue; }
-    (void)pl;
-    if(classic1) bloom_insert_classic(f1,pr,f1bits,k1); else bloom_insert(f1,pr,nb1-1);
-    classic_insert(f2,pr,log2b2,k2);
-    int seen=0; for(int k=0;k<npurp;k++) if(purposes[k]==(uint32_t)pu) seen=1;
-    if(!seen && npurp<8) purposes[npurp++]=(uint32_t)pu;
-    n++; if((n&0xFFFFF)==0){ double now=now_s(); if(now-tlast>=2.0){ fprintf(stderr,"  ... %ld addresses inserted (%.2fM/s, %.0fs elapsed)\r",n,n/(now-t0)/1e6,now-t0); fflush(stderr); tlast=now; } } }
-  if(f!=stdin) fclose(f);
+
+  /* -j>1 needs a seekable regular file (filename, or '-' with fd0 a regular file, e.g.
+     `build - < file`). A pipe (zcat | build -) falls back to the serial path. */
+  int use_par=0, infd=-1; size_t insize=0;
+  if(jobs>1){
+    struct stat ist;
+    if(!strcmp(infile,"-")){ if(!fstat(0,&ist)&&S_ISREG(ist.st_mode)){ infd=0; insize=(size_t)ist.st_size; use_par=1; } }
+    else { infd=open(infile,O_RDONLY); if(infd>=0){ if(!fstat(infd,&ist)&&S_ISREG(ist.st_mode)){ insize=(size_t)ist.st_size; use_par=1; } else { close(infd); infd=-1; } } }
+    if(!use_par) fprintf(stderr,"build: -j%d needs a seekable regular file (got a pipe/stream); falling back to -j1\n",jobs);
+  }
+
+  if(use_par){
+    const uint8_t*m=(const uint8_t*)mmap(0,insize,PROT_READ,MAP_SHARED,infd,0);
+    if(m==MAP_FAILED){ fprintf(stderr,"build: mmap input failed; falling back to -j1\n"); use_par=0; if(infd>0)close(infd); }
+    else {
+      madvise((void*)m,insize,MADV_SEQUENTIAL);
+      if(jobs>64) jobs=64;
+      pthread_t th[64]; Worker w[64]; pthread_mutex_t oflock=PTHREAD_MUTEX_INITIALIZER;
+      size_t chunk=insize/(size_t)jobs;
+      g_prog=0; g_done=0;
+      for(int t=0;t<jobs;t++){
+        memset(&w[t],0,sizeof w[t]);
+        w[t].m=m; w[t].fsz=insize; w[t].lo=(size_t)t*chunk; w[t].hi=(t==jobs-1)?insize:(size_t)(t+1)*chunk;
+        w[t].f1=f1; w[t].f2=f2; w[t].f1bits=f1bits; w[t].classic1=classic1; w[t].nb1m=nb1-1; w[t].k1=k1; w[t].log2b2=log2b2; w[t].k2=k2;
+        w[t].of=of; w[t].of_lock=&oflock;
+        pthread_create(&th[t],0,worker_fn,&w[t]);
+      }
+      double tlast=t0;
+      while(__atomic_load_n(&g_done,__ATOMIC_ACQUIRE) < (unsigned long long)jobs){
+        struct timespec ts={0,200000000L}; nanosleep(&ts,0);
+        double now=now_s();
+        if(now-tlast>=2.0){ unsigned long long g=__atomic_load_n(&g_prog,__ATOMIC_RELAXED);
+          fprintf(stderr,"  ... ~%llu addresses inserted (%.2fM/s, %.0fs elapsed, -j%d)\r",g,(double)g/(now-t0)/1e6,now-t0,jobs); fflush(stderr); tlast=now; }
+      }
+      for(int t=0;t<jobs;t++) pthread_join(th[t],0);
+      /* merge counters */
+      long long gf[4]={-1,-1,-1,-1};
+      for(int t=0;t<jobs;t++){ n+=w[t].n; bad+=w[t].bad; skip_wsh+=w[t].skip_wsh; skip_other+=w[t].skip_other;
+        for(int p=0;p<4;p++) if(w[t].pfirst[p]>=0 && (gf[p]<0 || w[t].pfirst[p]<gf[p])) gf[p]=w[t].pfirst[p]; }
+      /* purposes[] in the serial first-seen order = ascending by global first byte-offset */
+      { int used[4]={0,0,0,0};
+        for(int c=0;c<4;c++){
+          int best=-1; long long bo=-1;
+          for(int p=0;p<4;p++) if(!used[p]&&gf[p]>=0&&(best<0||gf[p]<bo)){ best=p; bo=gf[p]; }
+          if(best<0) break;
+          used[best]=1;
+          if(npurp<8) purposes[npurp++]=(uint32_t)PURP_VAL[best];
+        } }
+      munmap((void*)m,insize); if(infd>0) close(infd);
+    }
+  }
+
+  if(!use_par){
+    /* serial path -- byte-for-byte identical to the pre-`-j` build (do not change) */
+    FILE*f=(!strcmp(infile,"-"))?stdin:fopen(infile,"r"); if(!f){ fprintf(stderr,"cannot open %s\n",infile); munmap(obase,total); unlink(outfile); if(of)fclose(of); return 2; }
+    char line[256]; double tlast=t0;
+    while(fgets(line,sizeof line,f)){ char*s=line; while(*s==' '||*s=='\t')s++;
+      char*e=s+strlen(s); while(e>s&&(e[-1]=='\n'||e[-1]=='\r'||e[-1]==' '||e[-1]=='\t')) *--e=0; if(!*s) continue;
+      uint8_t pr[32]; memset(pr,0,32); int pl,pu; if(decode_address(s,pr,&pl,&pu)){
+        if(!strncmp(s,"bc1",3)) skip_wsh++; else { skip_other++; if(of) fprintf(of,"%s\n",s); }
+        bad++; continue; }
+      (void)pl;
+      if(classic1) bloom_insert_classic(f1,pr,f1bits,k1); else bloom_insert(f1,pr,nb1-1);
+      classic_insert(f2,pr,log2b2,k2);
+      int seen=0; for(int k=0;k<npurp;k++) if(purposes[k]==(uint32_t)pu) seen=1;
+      if(!seen && npurp<8) purposes[npurp++]=(uint32_t)pu;
+      n++; if((n&0xFFFFF)==0){ double now=now_s(); if(now-tlast>=2.0){ fprintf(stderr,"  ... %ld addresses inserted (%.2fM/s, %.0fs elapsed)\r",n,n/(now-t0)/1e6,now-t0); fflush(stderr); tlast=now; } } }
+    if(f!=stdin) fclose(f);
+  }
+
   g_decode_quiet=0;
   if(of){ fclose(of); if(skip_other) fprintf(stderr,"build: wrote %ld 'other' unparseable line(s) to %s\n",skip_other,other_file); }
   if(!n){ fprintf(stderr,"build: no valid addresses\n"); munmap(obase,total); unlink(outfile); return 2; }
@@ -286,7 +410,7 @@ static int cmd_stat(const char*file){
 int main(int argc,char**argv){
   if(argc<3){
     fprintf(stderr,"usage:\n"
-      "  %s build IN OUT --gib G1,G2 --n N [--classic1] [--other FILE]\n"
+      "  %s build IN OUT --gib G1,G2 --n N [--classic1] [--other FILE] [-j N]\n"
       "  %s append IN BLF\n"
       "  %s query BLF        (stdin: hex programs -> HIT lines)\n"
       "  %s stat BLF\n",argv[0],argv[0],argv[0],argv[0]);
@@ -297,16 +421,19 @@ int main(int argc,char**argv){
   if(!strcmp(cmd,"stat"))  return cmd_stat(argv[2]);
   if(!strcmp(cmd,"append")){ if(argc<4){ fprintf(stderr,"append IN BLF\n"); return 2; } return cmd_append(argv[2],argv[3]); }
   if(!strcmp(cmd,"build")){
-    if(argc<4){ fprintf(stderr,"build IN OUT --gib G1,G2 --n N [--classic1] [--other FILE]\n"); return 2; }
-    const char*in=argv[2],*out=argv[3]; double gib1=0,gib2=0; unsigned long long nn=0; int classic1=0; const char*other=0; double fpr=1e-12;
+    if(argc<4){ fprintf(stderr,"build IN OUT --gib G1,G2 --n N [--classic1] [--other FILE] [-j N]\n"); return 2; }
+    const char*in=argv[2],*out=argv[3]; double gib1=0,gib2=0; unsigned long long nn=0; int classic1=0; const char*other=0; double fpr=1e-12; int jobs=1;
     for(int i=4;i<argc;i++){
       if(!strcmp(argv[i],"--gib")&&i+1<argc){ sscanf(argv[++i],"%lf,%lf",&gib1,&gib2); }
       else if(!strcmp(argv[i],"--n")&&i+1<argc) nn=strtoull(argv[++i],0,10);
       else if(!strcmp(argv[i],"--classic1")) classic1=1;
       else if(!strcmp(argv[i],"--other")&&i+1<argc) other=argv[++i];
+      else if((!strcmp(argv[i],"-j")||!strcmp(argv[i],"--jobs"))&&i+1<argc) jobs=atoi(argv[++i]);
+      else if(!strncmp(argv[i],"-j",2)&&argv[i][2]) jobs=atoi(argv[i]+2);   /* -jN */
       else { fprintf(stderr,"unknown build arg: %s\n",argv[i]); return 2; }
     }
-    return cmd_build(in,out,nn,fpr,gib1,gib2,other,classic1);
+    if(jobs<1) jobs=1;
+    return cmd_build(in,out,nn,fpr,gib1,gib2,other,classic1,jobs);
   }
   fprintf(stderr,"unknown command: %s\n",cmd); return 2;
 }

@@ -21,6 +21,10 @@ Usage:
     zcat all_Bitcoin_addresses_ever_used_sorted.txt.gz \
       | bloomtool build - alladdrs.blf --gib 6.5,8 --n 1700000000 --classic1 --other skipped.txt
 
+    # faster full rebuild: -j N parallel workers (needs a SEEKABLE file, not a pipe)
+    bloomtool build all_addrs.txt alladdrs.blf --gib 6.5,8 --n 1700000000 --classic1 -j 8
+    #   or with stdin redirected from a real file (still seekable):  bloomtool build - out.blf ... -j 8 < all_addrs.txt
+
     # daily tip-append (idempotent): decode block addresses -> insert in place
     getblock-addresses.sh | bloomtool append - alladdrs.blf
 
@@ -40,3 +44,11 @@ Notes:
 - Build/append do random mmap writes: put the target file on **ext4/xfs or tmpfs**, never a
   plain btrfs file (copy-on-write turns random bit-writes into massive write amplification;
   use `chattr +C` if it must live on btrfs).
+- `-j N` (build only): N worker threads mmap the input, split it into byte ranges, and insert
+  concurrently with atomic bit-sets. Because bloom inserts only OR bits (order-independent),
+  **the output is byte-for-byte identical regardless of N** (verified: `-j1`==`-j8` via cmp).
+  The build is memory-latency-bound (~51 scattered cache-miss bit-sets/address), so threads
+  overlap those stalls: ~3.7× at `-j8` on a small test, more on the full filter / more cores.
+  Requires a **seekable regular file** input (filename, or `-` with stdin redirected from a
+  file); a pipe (`zcat | … -j8`) prints a warning and falls back to `-j1`. Default is `-j1`
+  (the exact serial path, unchanged). Appends stay single-threaded (they're already instant).

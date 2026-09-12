@@ -20,7 +20,7 @@ bloomq: bloomq.c bloom_host.h bloom_common.h
 # on a GPU-less box (e.g. hedonic). Static so it needs no runtime libs. Output is
 # byte-identical to the CLI's `--bloom-build --classic1` (proven by `make bloomtool-check`).
 bloomtool: tools/bloomtool.c bloom_host.h bloom_common.h
-	$(CC) $(CFLAGS) -static -I. -o tools/bloomtool tools/bloomtool.c -lm
+	$(CC) $(CFLAGS) -pthread -static -I. -o tools/bloomtool tools/bloomtool.c -lm
 
 # gate: a filter built by bloomtool is byte-for-byte identical to one built by the CLI
 bloomtool-check: bloomtool
