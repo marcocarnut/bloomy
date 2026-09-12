@@ -4,3 +4,6 @@ server
 wsServer/libws.a
 __pycache__/
 tools/bloomtool
+www/*
+!www/.gitkeep
+pfbench
