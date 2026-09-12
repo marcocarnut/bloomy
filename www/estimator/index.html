@@ -286,17 +286,17 @@
   </div>
 </div>
 
-<script src="../wasm/rxecore.js?v=b148"></script>
-<script src="../wasm/rxecore_api.js?v=b148"></script>
+<script src="../wasm/rxecore.js?v=b150"></script>
+<script src="../wasm/rxecore_api.js?v=b150"></script>
 <!-- ?v= cache-bust on our own scripts so a plain reload always gets the latest
      during dev (python http.server sends no cache headers). Bump on each change. -->
-<script src="../estimator/bip39.js?v=b148"></script>
-<script src="../estimator/model.js?v=b148"></script>
-<script src="../estimator/wordset.js?v=b148"></script>
-<script src="../estimator/bip39crypto.js?v=b148"></script>
-<script src="../estimator/electrum.js?v=b148"></script>
-<script src="../estimator/gpucrack.js?v=b148"></script>
-<script src="../estimator/i18n.js?v=b148"></script>
+<script src="../estimator/bip39.js?v=b150"></script>
+<script src="../estimator/model.js?v=b150"></script>
+<script src="../estimator/wordset.js?v=b150"></script>
+<script src="../estimator/bip39crypto.js?v=b150"></script>
+<script src="../estimator/electrum.js?v=b150"></script>
+<script src="../estimator/gpucrack.js?v=b150"></script>
+<script src="../estimator/i18n.js?v=b150"></script>
 <script>
 'use strict';
 const $ = s => document.querySelector(s);
@@ -305,8 +305,8 @@ const $$ = s => Array.from(document.querySelectorAll(s));
 // the bundler sets window.__CRACKWORKER_URL to a Blob URL carrying the inlined
 // worker (multicore stays alive when the page is SERVED; a file:// page can't
 // start a worker and falls back to single-thread -- serve locally to keep it).
-const CRACKWORKER_URL = (typeof window!=='undefined' && window.__CRACKWORKER_URL) || 'crackworker.js?v=b148';
-const APP_VERSION = 'b148';   // bumped with the cache stamp; tags shared benchmark JSON so DB rows stay comparable across methodology changes
+const CRACKWORKER_URL = (typeof window!=='undefined' && window.__CRACKWORKER_URL) || 'crackworker.js?v=b150';
+const APP_VERSION = 'b150';   // bumped with the cache stamp; tags shared benchmark JSON so DB rows stay comparable across methodology changes
 let RXE, VALIDATOR, ENGLISH = [];   // ENGLISH: wordlist, passed to crack workers
 const registered = new Map();
 let liveSets = [];
@@ -782,7 +782,7 @@ function setLang(l){
     const txt = globalThis.__ENGLISH_TXT || await (await fetch('../data/english.txt')).text();   // bundle inlines the wordlist
     const englishWords = txt.trim().split(/\r?\n/);
     ENGLISH = englishWords;                       // shared with crack workers
-    RXE = await RxeCoreAPI.loadRxeCore({ moduleArgs:{ locateFile:p=>'../wasm/'+p+'?v=b148' } });
+    RXE = await RxeCoreAPI.loadRxeCore({ moduleArgs:{ locateFile:p=>'../wasm/'+p+'?v=b150' } });
     RXE.registerDict('bip39', englishWords);
     registered.set('bip39', englishWords.length);
     // Aliases so older patterns/links keep resolving: [:bip39-en:] / [:bip39en:] / [:en:] / [:english:].
@@ -1824,7 +1824,7 @@ async function startBloomCrack(){
       return o;
     };
     async function runSweep(){
-      const nW=Math.max(1,Math.min(parseInt($('#cores').value,10)||4,(navigator.hardwareConcurrency||8),16));
+      const nW=Math.max(1,Math.min(parseInt($('#cores').value,10)||4,(navigator.hardwareConcurrency||8),32));   // raised 16->32 so many-core machines can throw more workers at a sweep-bound pattern
       const idle=[], pending=new Map();   // pending: EC batchId -> candidate array (for sendShard + HIT resolution)
       // ⭐ Seed in BIG batches: gpuSeedsWords has a ~280ms fixed per-dispatch cost, so a
       // 256-candidate call runs at ~900 seeds/s while a 4-8k call hits the GPU's real ~11k/s.
@@ -1840,7 +1840,13 @@ async function startBloomCrack(){
       // stops stalling the GPU-seed pipeline. Generic pool: a worker does SWEEP or EC.
       const SWEEP_CH = (mode==='words'&&reqCsum) ? 16384 : 8192;   // raw per sweep job -- short (~100ms) so a sweep only briefly borrows a worker from EC
       const ACC_CAP = SEED_BATCH*3;                                // backpressure: hold off sweeping once this many valid are buffered
-      const SWEEP_MAX = 2;                                         // one worker's sweep (~10k valid/s) already outpaces EC; cap low so EC keeps the pool
+      // Let the SWEEP scale across the pool. For a sparse-checksum pattern (e.g. a
+      // 24-word / 3-unknown = 1-in-256) the sweep is the bottleneck -- it must grind
+      // 256 raw candidates per valid one -- so capping it at 2 workers throttled the
+      // whole search. Allow up to nW-1 sweepers (leave >=1 for EC); the ACC_CAP
+      // backpressure + the consumer's demand for workers balance sweep-vs-EC per
+      // pattern (dense patterns fill acc fast -> sweepers back off -> workers do EC).
+      const SWEEP_MAX = Math.max(1, nW-1);
       const PPC = Math.max(1, PURPOSES.length*changes.length*gap);  // programs per candidate
       const BACKLOG = 16384;   // cap how far EC may run ahead of server-confirmed candidates: bounds the parked-send backlog (memory) + throttles EC to the sustainable send/ACK rate
       const SEED_MIN = 1024;   // seed a PARTIAL batch this small rather than let EC starve when the sweep is the bottleneck (sparse checksum) -- GPU at 1k still outpaces such a sweep
@@ -1866,11 +1872,21 @@ async function startBloomCrack(){
         // then EC: GPU idle) -> a 0->peak->0 sawtooth. A small ready-seed queue (SEED_AHEAD)
         // keeps the EC consumer fed across the ~1s GPU seed calls, so throughput stays flat.
         const seededQ=[]; const SEED_AHEAD=2; let seeding=false;
+        // TWO POOLS, not a greedy free-for-all: `sweepTarget` workers sweep, the rest do
+        // EC, both CONTINUOUSLY. Greedy sharing made a seed-batch's EC burst seize every
+        // worker (rate spikes to 5k while it drains, then sweep floods back -> violent
+        // oscillation, worse with more cores). sweepTarget adapts SLOWLY (±1 every 400ms,
+        // with a dead zone) toward the backlog: low acc -> more sweepers; high acc -> more EC.
+        let sweepTarget=Math.max(1, Math.min(SWEEP_MAX, nW>>1)), _lastAdapt=performance.now();
         const allDone=()=> sweepDone && sweepInFlight===0 && acc.length===0 && seededQ.length===0 && !seeding && ecInFlight===0;
         // SWEEPER: keep acc filled (unrank+checksum on workers); short chunks + a low cap so
         // it only briefly borrows workers from EC, and backs off once the backlog is deep.
         const sweeper=async()=>{ while(cracking && !finished && !sweepDone){
-          if(paused || !connected || acc.length>=ACC_CAP || idle.length===0 || sweepInFlight>=SWEEP_MAX){ await new Promise(r=>setTimeout(r,4)); continue; }
+          const _now=performance.now();
+          if(_now-_lastAdapt>400){ _lastAdapt=_now;   // slow, dead-zoned rebalance (no thrash)
+            if(acc.length < SEED_BATCH && sweepTarget < SWEEP_MAX) sweepTarget++;
+            else if(acc.length > ACC_CAP-SEED_BATCH && sweepTarget > 1) sweepTarget--; }
+          if(paused || !connected || acc.length>=ACC_CAP || idle.length===0 || sweepInFlight>=sweepTarget){ await new Promise(r=>setTimeout(r,4)); continue; }
           const s=sweepCursor, nn=Math.min(SWEEP_CH, total-s); sweepCursor+=nn; if(sweepCursor>=total) sweepDone=true;
           const w=idle.shift(); sweepInFlight++;
           w.postMessage({type:'bloomsweep', id:'s'+(sweepJobId++), wordlist:ENGLISH, pattern:setPattern, mode, requireChecksum:reqCsum, start:s, n:nn, total});
@@ -1895,8 +1911,9 @@ async function startBloomCrack(){
           if(seededQ.length===0){ if(allDone()) break; await new Promise(r=>setTimeout(r,3)); continue; }
           const {b,seeds}=seededQ.shift();
           for(let off=0; off<b.length && cracking && !finished; off+=SHARD){
-            // gate on a free worker, the WS send window, AND the confirm backlog (don't let EC race past what the server confirms)
-            while((idle.length===0 || !sendable() || (hashed - ackedProgs/PPC) > BACKLOG) && cracking && !finished) await new Promise(r=>setTimeout(r,3));
+            // gate on: a free worker BEYOND the sweep pool's reserve (so EC can't seize the
+            // sweepers' share), the WS send window, AND the confirm backlog.
+            while((idle.length <= (sweepDone?0:Math.max(0,sweepTarget-sweepInFlight)) || !sendable() || (hashed - ackedProgs/PPC) > BACKLOG) && cracking && !finished) await new Promise(r=>setTimeout(r,3));
             if(!cracking||finished) break;
             const cs=b.slice(off,off+SHARD), seg=seeds.subarray(off*64,(off+cs.length)*64);
             const w=idle.shift(), id=dispatched++; pending.set(id,cs); ecInFlight++;

@@ -125,6 +125,9 @@ int main(int argc,char**argv){
      client IP instead of the terminator's 127.0.0.1. Off by default (LAN/direct connections). */
   int proxy = getenv("PROXY_PROTOCOL") && getenv("PROXY_PROTOCOL")[0]=='1';
   ws_set_proxy_protocol(proxy);
+  /* Optional HTTP access log (Combined Log Format) for static GETs -> visitor usage stats. */
+  const char *acclog = getenv("ACCESS_LOG");
+  if(acclog && acclog[0]) ws_set_access_log(acclog);
   fprintf(stderr,"reseed39 bloom server: %llu addresses; WS + static (%s) on %s:%u",
           (unsigned long long)g_bloom.n_addrs, www, bind_host, port);
   fprintf(stderr,"; allow 127.0.0.1"); for(int i=4;i<argc;i++) fprintf(stderr,",%s",argv[i]);

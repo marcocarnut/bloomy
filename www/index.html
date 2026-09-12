@@ -132,6 +132,58 @@
   .sample code.bad{color:#7d8aa8;text-decoration:line-through}
   .sample code .ix{color:var(--dim)}
   .pill{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:20px;background:var(--panel2);border:1px solid var(--edge);color:var(--dim);margin-left:6px}
+  /* --- search-space explorer (dry-run visualizer) --- */
+  .modal.wide{max-width:820px;height:86vh}
+  .modal.wide .body{overflow:hidden;display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
+  .expl-slider{width:100%;display:block;margin:0 0 8px;accent-color:var(--accent);cursor:pointer;flex:0 0 auto}
+  .expl-ppbar{flex:0 0 auto;border:1px solid var(--edge);border-radius:8px;padding:8px 10px;margin-bottom:10px;background:var(--panel2)}
+  .expl-pplabel{font-size:11.5px;color:var(--dim);margin-bottom:5px}
+  .expl-ppcur{font-family:var(--mono);color:var(--accent);word-break:break-all}
+  .expl-controls{display:flex;gap:6px;margin-bottom:8px;flex:0 0 auto}
+  .expl-validnav{display:flex;gap:6px;width:100%}
+  .expl-validnav .ghost{flex:1 1 0;margin-top:0;padding:7px 4px;text-align:center;font-size:14px;line-height:1}
+  .expl-view{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative;border:1px solid var(--edge);border-radius:8px;background:#0c1120}
+  .expl-row{box-sizing:border-box;padding:8px 12px;border-bottom:1px solid var(--edge)}
+  .expl-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .expl-ix{font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .expl-badge{font-size:11px;font-weight:600}
+  .expl-badge.ok{color:#4ec98a} .expl-badge.bad{color:#7d8aa8}
+  .expl-mn{font-family:var(--mono);font-size:12.5px;line-height:1.7;word-break:break-word}
+  .expl-w{color:#9fb0d6}
+  .expl-w.var{color:#04102a;background:var(--accent);border-radius:4px;padding:1px 5px;font-weight:600}
+  .expl-row.bad{opacity:.5}
+  .expl-row.bad .expl-mn{text-decoration:line-through;text-decoration-color:#7d8aa8}
+  .expl-row.bad .expl-w.var{background:#4a5680;color:#c7d1ec}
+  /* derivation tree (always expanded) */
+  .expl-tree{margin-top:6px}
+  .expl-leaf{display:flex;gap:8px;align-items:baseline;padding:3px 6px;border-radius:5px;font-family:var(--mono);font-size:11.5px;flex-wrap:wrap}
+  .expl-path{color:var(--dim);white-space:nowrap;flex:0 0 auto}
+  .expl-addr{color:#22d3ee;word-break:break-all;flex:1 1 180px;min-width:0;text-decoration:none}
+  a.expl-addr{text-decoration:underline;text-underline-offset:2px}   /* an address in the bloom filter -> underlined link (seen on-chain) */
+  .expl-hit{color:#4ec98a;font-weight:600;flex:0 0 auto}
+  .expl-leaf.hit{background:rgba(78,201,138,.16)}
+  .expl-leaf.hit .expl-addr{color:#4ec98a;font-weight:600}
+  .expl-leaf.hit .expl-path{color:#4ec98a}
+  .expl-seekbox{display:flex;gap:6px;margin-bottom:8px;flex:0 0 auto}
+  .expl-seekbox[hidden]{display:none}   /* the display:flex above would otherwise defeat the hidden attribute */
+  .expl-seekin{flex:1 1 auto;font-family:var(--mono);font-size:12px;background:#0c1120;color:var(--ink);border:1px solid var(--edge);border-radius:6px;padding:6px 8px}
+  .expl-more{color:var(--dim);font-size:11px;padding:5px 6px 0}
+  @media(max-width:560px){
+    /* phone: use the full width, bigger touch targets */
+    .modal.wide{width:96%;height:92vh;max-width:none}
+    .modal.wide h3{padding:12px 12px;font-size:13px}
+    .modal.wide h3 .pill{display:none}          /* keep the title line clean */
+    .modal.wide .body{padding:12px 12px}
+    .modal.wide .foot{padding:10px 12px}
+    .expl-slider{height:26px}                    /* easier to grab */
+    .expl-validnav .ghost{padding:10px 4px;font-size:15px}
+    .expl-row{padding:9px 10px}
+    .expl-mn{font-size:12px;line-height:1.75}
+    .expl-w.var{padding:2px 5px}                 /* a touch taller so chips read as chips */
+    .expl-leaf{font-size:11px;gap:4px}
+    .expl-path{flex:1 1 100%}                    /* path on its own line, address below */
+    .expl-addr{flex:1 1 100%}
+  }
   .dictlist{margin-top:14px}
   .dictlist .d{display:flex;justify-content:space-between;background:var(--panel2);border:1px solid var(--edge);border-radius:7px;padding:7px 10px;margin-bottom:6px;font-family:var(--mono);font-size:12.5px}
   .muted{color:var(--dim)}
@@ -200,7 +252,10 @@
   <div class="pane form">
     <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px">
       <h2 data-i18n="searchShape" style="margin:0">Search shape</h2>
-      <button class="ghost" id="permBtn" data-i18n-title="permTip" title="Reorder known words" style="margin:0;padding:3px 10px;font-size:17px;line-height:1">⇄</button>
+      <span style="display:flex;gap:6px">
+        <button class="ghost" id="exploreTop" data-i18n-title="explore" title="Explore the search space" style="margin:0;padding:3px 10px;font-size:16px;line-height:1">🔭</button>
+        <button class="ghost" id="permBtn" data-i18n-title="permTip" title="Reorder known words" style="margin:0;padding:3px 10px;font-size:17px;line-height:1">⇄</button>
+      </span>
     </div>
 
     <div id="wordsBox">
@@ -2014,7 +2069,52 @@ let _seedChunkN = 0;   // 0 = auto
 const _isMobile = (function(){ try{
   if (navigator.userAgentData && typeof navigator.userAgentData.mobile==='boolean') return navigator.userAgentData.mobile;
   return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||''); }catch(e){ return false; } })();
-function _effChunk(){ return _seedChunkN>0 ? _seedChunkN : (_isMobile ? _mobChunk : (1<<20)); }
+// Desktop lanes/submit. Was (1<<20) = the WHOLE batch in one command, on the theory
+// "desktop == discrete GPU == no watchdog." False for an INTEGRATED desktop GPU: an
+// Intel Arc iGPU (which also drives the display) ran a 4096-lane PBKDF2 batch as one
+// ~1.2s dispatch, pegged the GPU >90%, and tripped the OS TDR watchdog -- the screen
+// blinked, the WebGPU device was lost, and the crack fell back to CPU. Bound it so each
+// submit is a short (~300ms) command that stays well under the watchdog AND yields the
+// display scheduling gaps between submits. _seedDepth=2 keeps the GPU busy across the
+// extra submits (compute overlaps readback), so the throughput cost is small. A discrete
+// GPU with no display duty can raise it via setDeskChunk / _seedChunkN for max speed.
+let _deskChunk = 1024;
+// Target GPU time PER SUBMIT. The chunk is steered so each dispatch lands near this.
+// It is NOT a smoothness knob -- it must sit as HIGH as the TDR watchdog safely allows:
+// too LOW forces tiny chunks whose per-submit readback/turnaround overhead isn't hidden,
+// which cratered throughput ~2.5x (a 350ms budget gave 820/s vs ~2000/s whole-batch).
+// The Arc tripped TDR only at whole-batch ~1200-1470ms/submit, so ~700ms keeps chunks
+// large (throughput) while the runtime adapt still shrinks them as the GPU heats, staying
+// clear of the watchdog. Live-tunable via setSeedBudget()/window.__SEED_BUDGET_MS.
+// Upper bound is intentionally generous (10s) so the TDR trip point can be PROBED by
+// pushing the budget past where a whole-batch dispatch trips the watchdog. Normal use
+// stays ~700-900ms; the runtime adapt shrinks from whatever start the budget implies.
+let _deskBudgetMs = (function(){ try{ const v=+(window.__SEED_BUDGET_MS); return (v>=100&&v<=10000)?v:700; }catch(e){ return 700; } })();
+function _setSeedBudget(ms){ ms=+ms; if(ms>=100 && ms<=10000){ _deskBudgetMs=ms; _deskProbed=false; try{ console.log('[gpucrack] seed budget -> '+ms+'ms/submit (will re-probe)'); }catch(_){} } }
+let _deskSubMs = 0;            // EMA of the MEASURED per-submit GPU time -- the runtime signal that steers _deskChunk
+let _deskAdaptLog = 0;
+let _deskProbing = false;     // true only during the one-shot cold probe (suppresses runtime adaptation)
+function _setDeskChunk(n){ n=n|0; if(n>0){ _deskChunk = Math.max(64, Math.min(1<<20, n)); } }
+function _effChunk(){ return _seedChunkN>0 ? _seedChunkN : (_isMobile ? _mobChunk : _deskChunk); }
+// Runtime-adaptive desktop chunk. A cold one-shot probe can't see THERMAL THROTTLING
+// (an Arc iGPU slows ~2x as it heats), so we also steer _deskChunk from the real
+// per-submit GPU time measured DURING the crack, holding each dispatch near the budget:
+// per-submit slower than budget -> shrink (stay clear of the watchdog); comfortably
+// faster -> grow (chase throughput on a fast discrete GPU). Desktop only; a manual
+// override (_seedChunkN) or mobile's own probe takes precedence.
+function _deskAdapt(chunkUsed, dts){
+  if(_deskProbing || _isMobile || _seedChunkN>0 || !dts || !dts.length) return;   // don't let the one-shot probe's forced sizes pollute the runtime EMA
+  const s=(dts.length>1?dts.slice(1):dts).slice().sort((a,b)=>a-b);   // drop the ramp sample; median is robust to per-submit jitter
+  const med=s[s.length>>1]; if(!(med>0)) return;
+  _deskSubMs = _deskSubMs>0 ? _deskSubMs*0.6+med*0.4 : med;           // EMA
+  const ratio=_deskBudgetMs/_deskSubMs;                             // >1 => faster than budget (room to grow); <1 => slower (must shrink)
+  if(ratio<0.85 || ratio>1.4){                                       // dead zone avoids thrash; shrink eagerly (TDR), grow lazily
+    let nc=Math.round(chunkUsed*ratio); nc=Math.max(256, Math.min(1<<20, nc)); nc-=nc%64; nc=Math.max(64,nc);
+    if(nc!==_deskChunk){ _deskChunk=nc;
+      try{ const now=performance.now(); if(now-_deskAdaptLog>3000){ _deskAdaptLog=now; console.log('[gpucrack] desk chunk -> '+nc+' lanes (per-submit ~'+_deskSubMs.toFixed(0)+'ms, budget '+_deskBudgetMs+'ms)'); } }catch(_){}
+    }
+  }
+}
 function _setSeedChunk(n){ n=n|0; _seedChunkN = n>0 ? Math.max(64, Math.min(1<<20, n)) : 0; }
 let _seedDepth = 2;   // submits kept in flight; harmless (1 submit on desktop), a mild hedge on mobile
 function _setSeedDepth(n){ _seedDepth = Math.max(1, Math.min(8, n|0)); }
@@ -2047,14 +2147,17 @@ async function _pipelineSeeds(dev, pipe, m, mkChunk, writeChunk){
     return { base, cn, stg, mp, temps:temps.concat(oBuf) };
   };
   const inflight=[]; let next=0;
+  const _dt=[]; let _prevC=performance.now();   // completion intervals ~= per-submit GPU time (steady-state, DEPTH pipelined) -> feeds _deskAdapt
   while(next<m && inflight.length<DEPTH){ inflight.push(submit(next)); next+=CHUNK; }
   while(inflight.length){
     const cur=inflight.shift(); await cur.mp;
+    const _now=performance.now(); _dt.push(_now-_prevC); _prevC=_now;
     const words=new Uint32Array(cur.stg.getMappedRange().slice(0)); cur.stg.unmap();
     writeChunk(cur.base, cur.cn, words);
     cur.temps.forEach(b=>b.destroy&&b.destroy()); if(cur.stg.destroy) cur.stg.destroy();
     if(next<m){ inflight.push(submit(next)); next+=CHUNK; }
   }
+  _deskAdapt(CHUNK, _dt);   // thermal-aware runtime steering of the desktop chunk (no-op on mobile / manual override)
 }
 // WGSL loader: the single-file SPA bundle inlines shaders on globalThis.__WGSL;
 // the served build fetches the sibling .wgsl. (A file:// page can't fetch, so
@@ -2765,7 +2868,39 @@ const _SEEDTEST = [
   'letter advice cage absurd amount doctor acoustic avoid letter advice cage above',                                         // 12w
   'trial ability gloom dragon try dirt rapid crawl soon fatal tool chronic rapid ladder salmon palace expect enrich helmet truth receive mercy horror arrow',   // 24w, 152B (>128 -> key pre-hash)
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art' ];   // 24w, 187B (>128 -> key pre-hash)
+// Make the DESKTOP seed chunk adaptive instead of a fixed 1024. Time two reference
+// sizes to separate the fixed per-submit cost from the per-lane cost, then pick the
+// largest chunk whose single dispatch stays under a display-safe budget -- well under
+// the OS TDR watchdog AND leaving the compositor headroom (_seedDepth=2 keeps ~2 such
+// submits queued). This spans the whole desktop range from one probe: a fast discrete
+// GPU (RTX) -> a big chunk (few submits, high throughput); a slow integrated GPU that
+// also drives the display (Arc) -> a small chunk (no watchdog trip). Mobile keeps its
+// own crash-recovery probe; a manual override (_seedChunkN / setDeskChunk) wins over both.
+let _deskProbed = false;
+function _deskProbeBatch(cn){ return new Array(cn).fill(_SEEDTEST[2]); }   // 24w/152B: the heavy 2-block key-prehash path (conservative)
+async function _calibrateDeskChunk(){
+  if(_deskProbed || _isMobile || _seedChunkN>0) return;   // one shot; mobile probe / manual override take precedence
+  _deskProbed = true;                                     // set first: even a throw leaves the safe default in place
+  _deskProbing = true;                                    // suppress runtime _deskAdapt while we drive forced sizes
+  try{
+    const time1=async(cn)=>{ const save=_deskChunk; _deskChunk=cn;   // force ONE submit of exactly cn lanes
+      const b=_deskProbeBatch(cn), t0=performance.now(); await gpuSeedsWords(b,''); const dt=performance.now()-t0; _deskChunk=save; return dt; };
+    await time1(64);                                                 // warm (clock ramp) -- discard
+    const A=256, B=1024;
+    const tA=Math.min(await time1(A), await time1(A));              // best-of-2 to drop scheduler jitter
+    const tB=Math.min(await time1(B), await time1(B));
+    const perLane=Math.max(1e-4, (tB-tA)/(B-A));                    // ms/lane (slope)
+    const fixed=Math.max(0, tA - A*perLane);                        // ms fixed per submit (intercept)
+    let chunk=Math.floor((_deskBudgetMs - fixed)/perLane);
+    chunk=Math.max(256, Math.min(1<<20, chunk));
+    chunk-=chunk%64;                                                // whole workgroups (WG=64)
+    _deskChunk=Math.max(64,chunk);
+    try{ console.log('[gpucrack] desktop seed chunk auto-set to '+_deskChunk+' lanes (fixed~'+fixed.toFixed(0)+'ms + '+perLane.toFixed(3)+'ms/lane, budget '+_deskBudgetMs+'ms/submit)'); }catch(_){}
+  }catch(e){ try{ console.warn('[gpucrack] desk-chunk probe failed, keeping '+_deskChunk+':', (e&&e.message)||e); }catch(_){} }
+  finally{ _deskProbing = false; }
+}
 async function verifySeeds(){
+  try{ await _calibrateDeskChunk(); }catch(_){}   // size the desktop dispatch before the first real crack (desktop only; self-guarded)
   if(_seedTrust!==null) return _seedTrust;
   try{ const r=await gateWords(_SEEDTEST,''); _seedTrust = r.every(x=>x.ok);
     if(!_seedTrust){ try{ console.warn('[gpucrack] GPU seed self-test FAILED (this device miscomputes WGSL seeds):', r.filter(x=>!x.ok).map(x=>x.len+'B')); }catch(_){} } }
@@ -2779,9 +2914,11 @@ window.GpuCrack = { initGpu, gpuSeeds, benchmark, crackXpub, crackAddress, MAXSA
   setBatchEC:(b)=>{ BATCH_EC=!!b; }, getBatchEC:()=>BATCH_EC,
   setSeedChunk:_setSeedChunk, getSeedChunk:()=>_seedChunkN,   // 0 = auto (mobile-aware)
   setMobChunk:_setMobChunk, getMobChunk:()=>_mobChunk,        // probe-chosen mobile lanes/dispatch
+  setDeskChunk:_setDeskChunk, getDeskChunk:()=>_deskChunk,    // desktop lanes/submit (bounded for TDR safety on integrated/display GPUs)
+  setSeedBudget:_setSeedBudget, getSeedBudget:()=>_deskBudgetMs, getDeskSubMs:()=>_deskSubMs,   // live-tunable target ms/submit + the measured per-submit EMA
   setGpuLostCb:_setGpuLostCb,                                 // app hook: real device loss (watchdog reset)
   setMaxLen:_setMaxLen,                                       // EXPERIMENTAL ?maxlen: skip candidates longer than N chars
-  getEffSeedChunk:_effChunk, isMobile:()=>_isMobile, setSeedDepth:_setSeedDepth,
+  getEffSeedChunk:_effChunk, isMobile:()=>_isMobile, setSeedDepth:_setSeedDepth, getSeedDepth:()=>_seedDepth,
   getGpuResets:()=>_gpuResets, resetGpuStats:_resetGpuStats,
   // base = minimum/starting cooldown; it doubles per consecutive failure up to
   // the cap, and resets to base after running clean past the stability window.
@@ -2970,6 +3107,21 @@ const STRINGS = {
     firstN: "first", randomN: "random", nothingSample: "nothing to sample.",
     sampleUnbounded: "set is unbounded — bound the pattern to sample it.",
     jointSample: "(combined: each valid mnemonic above is swept against the full passphrase set)",
+    explore: "Explore the search space", exploreOpen: "🔭 Explore the search space",
+    exploreIntro: "Every candidate the search walks, in order.",
+    exploreIntroAll: "Every candidate the search walks, in order.",
+    explNavFirst: "first", explNavPrev: "previous", explNavRand: "random", explNavNext: "next", explNavLast: "last",
+    explInvalidCk: "invalid checksum", explPassAxis: "Passphrase", explMnemAxis: "Mnemonic",
+    explSeek: "go to index #", explSeekPh: "index # (0-based)",
+    explBloomUsed: "seen on-chain", explBloomUnused: "not seen",
+    explBloomUsedTip: "this address is in the bloom filter of ever-used addresses (may rarely false-positive) — click to open it on Blockchair",
+    explPosition: "position", explOfKeyspace: "of keyspace", explJump: "jump to #",
+    explNextValid: "next valid ▷", explPrevValid: "◁ prev valid",
+    explNoneAhead: "no checksum-valid candidate found ahead (scanned %n)",
+    explNoneBehind: "no checksum-valid candidate found behind (scanned %n)",
+    explValid: "checksum valid", explRejected: "rejected by checksum", explScanning: "scanning…",
+    explVarWord: "variable position (what the search enumerates here)",
+    explMore: "more not shown", explTapExpand: "tap to show the addresses this candidate derives",
     detected: "detected", unrecognized: "unrecognized prefix — set the target & derivation manually",
     xpubAmbiguous: "(bare xpub is ambiguous — Ledger/descriptors use xpub for every type, so the others are left available)",
     // spoken
@@ -3127,6 +3279,21 @@ const STRINGS = {
     firstN: "primeiros", randomN: "aleatórios", nothingSample: "nada para amostrar.",
     sampleUnbounded: "o conjunto é ilimitado — limite o padrão para amostrá-lo.",
     jointSample: "(combinado: cada mnemônico válido acima é varrido contra todo o conjunto da frase-senha)",
+    explore: "Explore o espaço de busca", exploreOpen: "🔭 Explore o espaço de busca",
+    exploreIntro: "Cada candidato que a busca percorre, em ordem.",
+    exploreIntroAll: "Cada candidato que a busca percorre, em ordem.",
+    explNavFirst: "primeiro", explNavPrev: "anterior", explNavRand: "aleatório", explNavNext: "próximo", explNavLast: "último",
+    explInvalidCk: "checksum inválido", explPassAxis: "Frase-senha", explMnemAxis: "Mnemônico",
+    explSeek: "ir para o índice #", explSeekPh: "índice # (base 0)",
+    explBloomUsed: "vista on-chain", explBloomUnused: "não vista",
+    explBloomUsedTip: "este endereço está no bloom filter de endereços já usados (pode raramente dar falso-positivo) — clique para abrir no Blockchair",
+    explPosition: "posição", explOfKeyspace: "do espaço", explJump: "ir para #",
+    explNextValid: "próximo válido ▷", explPrevValid: "◁ válido anterior",
+    explNoneAhead: "nenhum candidato válido pelo checksum à frente (varridos %n)",
+    explNoneBehind: "nenhum candidato válido pelo checksum atrás (varridos %n)",
+    explValid: "checksum válido", explRejected: "rejeitado pelo checksum", explScanning: "varrendo…",
+    explVarWord: "posição variável (o que a busca enumera aqui)",
+    explMore: "mais não mostrados", explTapExpand: "toque para ver os endereços que este candidato deriva",
     detected: "detectado", unrecognized: "prefixo não reconhecido — defina o alvo e a derivação manualmente",
     xpubAmbiguous: "(uma xpub pura é ambígua — Ledger/descriptors usam xpub para todos os tipos, então os demais ficam disponíveis)",
     spokenExactly: "exatamente", spokenBitLess: "pouco menos que", spokenBitMore: "pouco mais que",
@@ -3154,8 +3321,8 @@ const $$ = s => Array.from(document.querySelectorAll(s));
 // the bundler sets window.__CRACKWORKER_URL to a Blob URL carrying the inlined
 // worker (multicore stays alive when the page is SERVED; a file:// page can't
 // start a worker and falls back to single-thread -- serve locally to keep it).
-const CRACKWORKER_URL = (typeof window!=='undefined' && window.__CRACKWORKER_URL) || 'crackworker.js?v=b148';
-const APP_VERSION = 'b148';   // bumped with the cache stamp; tags shared benchmark JSON so DB rows stay comparable across methodology changes
+const CRACKWORKER_URL = (typeof window!=='undefined' && window.__CRACKWORKER_URL) || 'crackworker.js?v=b174';
+const APP_VERSION = 'b174';   // bumped with the cache stamp; tags shared benchmark JSON so DB rows stay comparable across methodology changes
 let RXE, VALIDATOR, ENGLISH = [];   // ENGLISH: wordlist, passed to crack workers
 const registered = new Map();
 let liveSets = [];
@@ -3631,7 +3798,7 @@ function setLang(l){
     const txt = globalThis.__ENGLISH_TXT || await (await fetch('../data/english.txt')).text();   // bundle inlines the wordlist
     const englishWords = txt.trim().split(/\r?\n/);
     ENGLISH = englishWords;                       // shared with crack workers
-    RXE = await RxeCoreAPI.loadRxeCore({ moduleArgs:{ locateFile:p=>'../wasm/'+p+'?v=b148' } });
+    RXE = await RxeCoreAPI.loadRxeCore({ moduleArgs:{ locateFile:p=>'../wasm/'+p+'?v=b174' } });
     RXE.registerDict('bip39', englishWords);
     registered.set('bip39', englishWords.length);
     // Aliases so older patterns/links keep resolving: [:bip39-en:] / [:bip39en:] / [:en:] / [:english:].
@@ -4029,6 +4196,8 @@ function wireUI(){
   $('#labelClose').onclick=$('#labelCancel').onclick=closeLabelDialog;
   $('#labelCopy').onclick=submitLabelShare;
   $('#sampleClose').onclick=$('#sampleCloseB').onclick=()=>$('#sampleOverlay').classList.remove('on');
+  { const et=$('#exploreTop'); if(et) et.onclick=openExplorer; }
+  _wireExplorer();
   $('#shareBtn').onclick=openShareModal;
   window.addEventListener('online', renderOnlineBanner);
   window.addEventListener('offline', renderOnlineBanner);
@@ -4036,7 +4205,7 @@ function wireUI(){
   $('#shareCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('#shareUrl').value); const b=$('#shareCopy'); b.textContent='✓ '+t('shareCopied'); setTimeout(()=>b.textContent=t('shareCopy'),1600); }catch(e){ $('#shareUrl').select(); } };
   $('#shareNative').onclick=async()=>{ try{ await navigator.share({ title:'(re)³seed39', text:t('shareNativeText'), url:$('#shareUrl').value }); }catch(e){} };   // native OS share sheet (mobile)
   $('#crackClose').onclick=()=>{ if(cracking) cracking=false; $('#crackOverlay').classList.remove('on'); };
-  [$('#benchOverlay'),$('#sampleOverlay'),$('#crackOverlay'),$('#labelOverlay'),$('#infoOverlay'),$('#bloomOverlay')].forEach(o=>o.addEventListener('click',e=>{ if(e.target===o){ if(o.id==='benchOverlay'&&_benchRunning) return; if(o.id==='crackOverlay'&&cracking) cracking=false; o.classList.remove('on'); } }));
+  [$('#benchOverlay'),$('#sampleOverlay'),$('#exploreOverlay'),$('#crackOverlay'),$('#labelOverlay'),$('#infoOverlay'),$('#bloomOverlay')].forEach(o=>o.addEventListener('click',e=>{ if(e.target===o){ if(o.id==='benchOverlay'&&_benchRunning) return; if(o.id==='crackOverlay'&&cracking) cracking=false; o.classList.remove('on'); } }));
 }
 function schedule(){ clearTimeout(debounce); debounce=setTimeout(recompute,300); }
 
@@ -4539,12 +4708,18 @@ async function startBloomCrack(){
   // unacked = frames sent, awaiting ACK. Each: { text (ready-to-send, for resend), cs
   // (the candidates in it, for HIT identification), progs }. Pruned on ACK. NO per-program
   // hexMap: on a HIT we re-derive the (still in-flight) candidates to name it.
-  let sent=0, finished=false, workers=[]; const unacked=[], t0=performance.now();
+  let sent=0, finished=false, workers=[], _gpuReverted=false; const unacked=[], t0=performance.now();   // _gpuReverted: a mid-run GPU seed failure flipped us to CPU (TDR marker)
   // Flow control: a slow-start congestion window (frames in flight) that OPENS as ACKs
   // come back cleanly, plus a socket-buffer cap so the stream paces to the actual
   // network ("flow to the slowest component"). cwnd also bounds the un-ACKed frame
   // buffer; it stays small on a slow link (fewer ACKs -> slower open). Reset per connect.
   let cwnd=16; const CWND_MAX=128, BUFCAP=1<<18;   // start at the old fixed window (never worse), open to 128; 256 KiB socket-buffer cap
+  // --- [mainprof] main-thread bottleneck profiler (DIAGNOSTIC; OPT-IN via ?profiler=1|on|true) ---
+  // Measures where the main thread's wall-time goes plus the event-loop LAG (how late a 20ms
+  // timer fires = main saturation) and the live adaptive seed chunk/per-submit. OFF by default
+  // for shipped/public builds; enable per-run with ?profiler=1 (or on/true). Logs one line/sec.
+  const _MAINPROF = /[?&]profiler=(1|on|true)\b/i.test(location.search);
+  const _pf={gpuSeed:0,gpuN:0,wsSend:0,onMsg:0,ecPost:0,swAcc:0,lagSum:0,lagN:0,lagMax:0};
   const cleanup=()=>{ try{if(_progTimer){clearInterval(_progTimer);_progTimer=null;}}catch(_){} try{set.free();}catch(_){} try{ if(ws){ ws.onclose=null; ws.close(); } }catch(_){} workers.forEach(w=>{try{w.terminate();}catch(_){}}); cracking=false; };
   // Report a HIT -- but ONLY after re-deriving the program on the CPU and confirming
   // it matches the hex the server flagged. A recovery tool must never announce a
@@ -4569,7 +4744,7 @@ async function startBloomCrack(){
       +'<div style="margin-top:6px"><b>'+esc(t('crackFoundMn'))+'</b> <span class="foundname">'+esc(mnShown)+'</span></div>'
       +(passShown?'<div class="note">'+esc(t('crackPlusPass'))+' '+esc(passShown)+'</div>':'')
       +'<div class="note" style="margin-top:4px">⚠ verify against your own wallet before trusting.</div>';
-    _logStopRun({ outcome:'found', address:addr, path, mnemonic:mnShown, passphrase:passShown||'' });
+    _logStopRun({ outcome:'found', address:addr, path, mnemonic:mnShown, passphrase:passShown||'', gpu_reverted:(_gpuReverted?'yes (fell back to CPU mid-run)':'') });
     cleanup(); setEndButtons(); return true;
   };
   const abort=(reason)=>{ if(finished) return; finished=true; if(reason) msg.textContent=reason; prog.textContent=''; _logStopRun({outcome:'unavailable'}); cleanup(); setEndButtons(); };
@@ -4586,11 +4761,11 @@ async function startBloomCrack(){
       if(prog.textContent===t('bloomConnecting')) prog.textContent='';
       for(const f of unacked){ try{ ws.send(f.text); }catch(_){} }   // re-send in-flight frames after a drop
       if(!sweepStarted){ sweepStarted=true; runSweep(); } };
-    ws.onmessage=(ev)=>{ for(const ln of String(ev.data).split('\n')){ if(!ln) continue;
+    ws.onmessage=(ev)=>{ const _m0=_MAINPROF?performance.now():0; for(const ln of String(ev.data).split('\n')){ if(!ln) continue;
       if(ln.startsWith('HIT ')){ const hh=ln.slice(4).trim(); if(!finished){   // find which in-flight candidate produced this program (HIT precedes its frame's ACK, so it's still in unacked)
         for(const f of unacked){ const ctx=resolveHit(f.cs, hh); if(ctx){ if(showHit(ctx, hh)) return; break; } } } }   // verified hit stops; an unverifiable one is rejected and we keep going
       else if(ln.startsWith('ACK ')){ const f=unacked.shift(); if(f){ ackedProgs+=f.progs;
-        if(cwnd<CWND_MAX) cwnd += (cwnd<64?4:1); } } } };   // ACK: count programs (O(1), no per-program work) + OPEN the window (slow-start: +4 while ramping, +1 near the cap)
+        if(cwnd<CWND_MAX) cwnd += (cwnd<64?4:1); } } } if(_MAINPROF) _pf.onMsg+=performance.now()-_m0; };   // ACK: count programs (O(1), no per-program work) + OPEN the window (slow-start: +4 while ramping, +1 near the cap)
     ws.onerror=()=>{};                                     // onclose drives teardown/reconnect
     ws.onclose=()=>{ connected=false; if(finished||_crackAbort||!cracking) return; reconnect(); }; };
   const sendable=()=> !paused && connected && unacked.length<cwnd && (!ws || ws.bufferedAmount<=BUFCAP);   // window has room AND the socket isn't backed up
@@ -4639,7 +4814,7 @@ async function startBloomCrack(){
   // a HIT on this frame can be re-derived and named; dropped on ACK.
   const sendShard=async(cs, text, progs)=>{
     await waitSendable(); if(!cracking||finished) return;
-    try{ ws.send(text); }catch(_){}
+    const _s0=_MAINPROF?performance.now():0; try{ ws.send(text); }catch(_){} if(_MAINPROF) _pf.wsSend+=performance.now()-_s0;
     unacked.push({ text, cs, progs }); sent+=progs; hashed+=cs.length;
   };
   // Inline (no-worker) fallback: batched EC on the main thread, same output order.
@@ -4666,14 +4841,20 @@ async function startBloomCrack(){
   };
     // Build the seeds for one candidate batch (mnemonics in words mode / passphrases otherwise).
     const seedsFor = async (cands)=>{
-      if(gpu) return await window.GpuCrack.gpuSeedsWords(cands, passFixed);   // words+GPU, one big efficient call
+      if(gpu){ const _g0=_MAINPROF?performance.now():0;
+        try{ const r=await window.GpuCrack.gpuSeedsWords(cands, passFixed); if(_MAINPROF){ _pf.gpuSeed+=performance.now()-_g0; _pf.gpuN++; } return r; }   // words+GPU (wall time: encode+GPU+readback)
+        catch(e){ gpu=false; _gpuReverted=true;   // GPU seed failed mid-run (e.g. a watchdog/TDR device loss). Degrade to CPU for the rest of the run rather than hang the seeder (which would let acc run away). Correctness is unaffected -- CPU seeds are the oracle.
+          const _sub=(window.GpuCrack.getDeskSubMs?window.GpuCrack.getDeskSubMs():0), _ch=(window.GpuCrack.getDeskChunk?window.GpuCrack.getDeskChunk():0), _bud=(window.GpuCrack.getSeedBudget?window.GpuCrack.getSeedBudget():0);
+          try{ console.warn('[bloom] GPU seed failed mid-run ('+((e&&e.message)||e)+') -> falling back to CPU seeds'); }catch(_){}
+          try{ _logEvent('gpu-reverted-to-cpu', 'at t='+Math.round(performance.now()-_logStart)+'ms  perSubmit~'+Math.round(_sub)+'ms  chunk='+_ch+'  budget='+_bud+'ms  reason: '+((e&&e.message)||e)); }catch(_){}   // marks the TDR trip in the CSV timeline
+          try{ msg.textContent=t('bloomGpuBad'); }catch(_){} } }   // fall through to the CPU path below for THIS batch too
       const o=new Uint8Array(cands.length*64);
       for(let k=0;k<cands.length;k++){ o.set(mode==='words'? C.mnemonicToSeed(cands[k],passFixed) : C.mnemonicToSeed(mnFixed,cands[k]), k*64);
         if((k&255)===255) await Promise.resolve(); }   // yield periodically so a long CPU-seed batch doesn't starve callbacks
       return o;
     };
     async function runSweep(){
-      const nW=Math.max(1,Math.min(parseInt($('#cores').value,10)||4,(navigator.hardwareConcurrency||8),16));
+      const nW=Math.max(1,Math.min(parseInt($('#cores').value,10)||4,(navigator.hardwareConcurrency||8),32));   // raised 16->32 so many-core machines can throw more workers at a sweep-bound pattern
       const idle=[], pending=new Map();   // pending: EC batchId -> candidate array (for sendShard + HIT resolution)
       // ⭐ Seed in BIG batches: gpuSeedsWords has a ~280ms fixed per-dispatch cost, so a
       // 256-candidate call runs at ~900 seeds/s while a 4-8k call hits the GPU's real ~11k/s.
@@ -4681,7 +4862,11 @@ async function startBloomCrack(){
       // encode+readback (~scales with batch size), and that block starves the EC/ACK
       // flow -> a sawtooth. 4096 halves the block for only ~11% less GPU efficiency,
       // and SEED_AHEAD pipelining keeps the GPU busy across calls.
-      const SEED_BATCH = gpu ? 4096 : 512;
+      // window.__SEED_BATCH overrides the default (TDR-hunt / tuning knob): the chunk is
+      // capped at the batch, so raising this lets setDeskChunk / a big budget push a SINGLE
+      // dispatch past whole-batch(4096) to find the exact per-submit duration that trips TDR.
+      const SEED_BATCH = (function(){ try{ const v=+(window.__SEED_BATCH); if(v>=256 && v<=65536) return v|0; }catch(_){}
+        return gpu ? 4096 : 512; })();
       // Keep EC jobs SMALL (many per seed-batch) so worker completions -- and thus the
       // frame/ACK stream -- spread out continuously instead of finishing in one lump.
       const SHARD = 256;
@@ -4689,7 +4874,19 @@ async function startBloomCrack(){
       // stops stalling the GPU-seed pipeline. Generic pool: a worker does SWEEP or EC.
       const SWEEP_CH = (mode==='words'&&reqCsum) ? 16384 : 8192;   // raw per sweep job -- short (~100ms) so a sweep only briefly borrows a worker from EC
       const ACC_CAP = SEED_BATCH*3;                                // backpressure: hold off sweeping once this many valid are buffered
-      const SWEEP_MAX = 2;                                         // one worker's sweep (~10k valid/s) already outpaces EC; cap low so EC keeps the pool
+      // Let the SWEEP scale across the pool. For a sparse-checksum pattern (e.g. a
+      // 24-word / 3-unknown = 1-in-256) the sweep is the bottleneck -- it must grind
+      // 256 raw candidates per valid one -- so capping it at 2 workers throttled the
+      // whole search. Allow up to nW-1 sweepers (leave >=1 for EC); the ACC_CAP
+      // backpressure + the consumer's demand for workers balance sweep-vs-EC per
+      // pattern (dense patterns fill acc fast -> sweepers back off -> workers do EC).
+      // Cap sweep at nW-2 so EC ALWAYS has >=2 workers. The [mainprof] runs proved 1 EC
+      // worker (~3400/s) is the ceiling that pinned us -- BELOW both the sweep capacity
+      // (~770/s/worker) and the GPU PBKDF2 seed ceiling (~4-6k/s, the real irreducible wall).
+      // The bottleneck shifts (EC when the GPU is fast, sweep/GPU when it throttles), so no
+      // single queue signal auto-balances it; a structural EC floor of 2 does. The seededQ
+      // controller below still trims sweep further for dense (EC-heavy) patterns.
+      const SWEEP_MAX = Math.max(1, nW-2);
       const PPC = Math.max(1, PURPOSES.length*changes.length*gap);  // programs per candidate
       const BACKLOG = 16384;   // cap how far EC may run ahead of server-confirmed candidates: bounds the parked-send backlog (memory) + throttles EC to the sustainable send/ACK rate
       const SEED_MIN = 1024;   // seed a PARTIAL batch this small rather than let EC starve when the sweep is the bottleneck (sparse checksum) -- GPU at 1k still outpaces such a sweep
@@ -4699,7 +4896,7 @@ async function startBloomCrack(){
           workers.push(w); idle.push(w);
           w.onmessage=async(e)=>{ const m=e.data; if(!m||finished) return;
             if(m.type==='bloomswept'){ idle.push(w); sweepInFlight--; swept+=m.n; validSwept+=m.items.length;
-              for(const it of m.items) acc.push(it); }
+              const _a0=_MAINPROF?performance.now():0; for(const it of m.items) acc.push(it); if(_MAINPROF) _pf.swAcc+=performance.now()-_a0; }
             else if(m.type==='bloomderived'){ const mns=pending.get(m.batchId); pending.delete(m.batchId); idle.push(w); ecInFlight--;
               if(mns) await sendShard(mns, m.text, m.progs); derived++; }
             else if(m.type==='error'){ idle.push(w); if(String(m.id||'').startsWith('s')) sweepInFlight--; }
@@ -4707,19 +4904,57 @@ async function startBloomCrack(){
         }
       }
       _lastTickT=performance.now(); if(!_progTimer) _progTimer=setInterval(showProg,100);   // stream-paced smooth display (timer + the throttled onmessage tick above)
-      _logStartRun({ engine:(gpu?'GPU':'CPU')+' (bloom)', mode, target:'bloom (all used addresses)', pattern:setPattern, gpu:!!gpu, workers:workers.length, total, seed_batch:SEED_BATCH, shard:SHARD }, {});   // ?loginterval CSV
+      const _gk=(fn)=>{ try{ return (gpu && window.GpuCrack && window.GpuCrack[fn]) ? window.GpuCrack[fn]() : ''; }catch(_){ return ''; } };
+      _logStartRun({ engine:(gpu?'GPU':'CPU')+' (bloom)', mode, target:'bloom (all used addresses)', pattern:setPattern,
+        client:(typeof location!=='undefined'?location.host:''), bloom_server:url,   // WHICH client/build served the page, and WHICH bloom server it streams to
+        gpu:!!gpu, cores:nW, workers:workers.length, sweep_max:SWEEP_MAX, total, seed_batch:SEED_BATCH, shard:SHARD,
+        seed_budget_ms:_gk('getSeedBudget'), desk_chunk0:_gk('getDeskChunk'), seed_depth:_gk('getSeedDepth'),   // GPU seed controller params (desk_chunk0 = cold-probe start; it adapts at runtime)
+        ua:(typeof navigator!=='undefined'?navigator.userAgent:'') }, {});   // browser (Chrome vs Firefox etc) for the test matrix
       const useWorkers = workers.length>0;
       if(useWorkers){
         // THREE concurrent tasks share the pool so the GPU seed of batch N+1 OVERLAPS the
         // worker EC of batch N (GPU ∥ CPU). Without this they alternated (seed: workers idle;
         // then EC: GPU idle) -> a 0->peak->0 sawtooth. A small ready-seed queue (SEED_AHEAD)
         // keeps the EC consumer fed across the ~1s GPU seed calls, so throughput stays flat.
-        const seededQ=[]; const SEED_AHEAD=2; let seeding=false;
+        const seededQ=[]; const SEED_AHEAD=3; let seeding=false;   // 2->3: once EC has most of the pool the GPU seed is the ceiling (~batchy ~700ms/batch); a deeper ready-queue keeps EC fed across batches so the stream stays continuous
+        // TWO POOLS, not a greedy free-for-all: `sweepTarget` workers sweep, the rest do
+        // EC, both CONTINUOUSLY. Greedy sharing made a seed-batch's EC burst seize every
+        // worker (rate spikes to 5k while it drains, then sweep floods back -> violent
+        // oscillation, worse with more cores). sweepTarget adapts SLOWLY (±1 every 400ms,
+        // with a dead zone) toward the backlog: low acc -> more sweepers; high acc -> more EC.
+        let sweepTarget=SWEEP_MAX, _lastAdapt=performance.now();   // start at the sweep-bound optimum (EC floor already reserved); controller trims down only if seededQ backs up
+        // [mainprof] event-loop lag sampler (a 20ms self-rescheduling timer; how late it
+        // fires = main-thread saturation) + a 1s logger. seededQ/acc/idle depths tell us
+        // starvation (empty) vs backpressure (full) at the moment we sample.
+        if(_MAINPROF){
+          let _lagExp=0, _pfLast=performance.now();
+          const _tick=()=>{ const now=performance.now(); if(_lagExp){ const lag=now-_lagExp; _pf.lagSum+=lag; _pf.lagN++; if(lag>_pf.lagMax)_pf.lagMax=lag; } _lagExp=now+20; if(cracking&&!finished) setTimeout(_tick,20); };
+          setTimeout(_tick,20);
+          const _log=()=>{ if(!cracking||finished) return; const now=performance.now(), dt=now-_pfLast; _pfLast=now;
+            const avgLag=_pf.lagN?(_pf.lagSum/_pf.lagN):0;
+            let _gk=''; try{ if(gpu&&window.GpuCrack.getDeskChunk) _gk=` || chunk=${window.GpuCrack.getDeskChunk()} subMs=${(window.GpuCrack.getDeskSubMs?window.GpuCrack.getDeskSubMs():0).toFixed(0)}`; }catch(_){}   // live adaptive seed chunk + measured per-submit ms
+            console.log(`[mainprof ${APP_VERSION}] loopLag avg=${avgLag.toFixed(1)}ms max=${_pf.lagMax.toFixed(0)}ms || gpuSeed=${_pf.gpuSeed.toFixed(0)}ms(${_pf.gpuN}x) wsSend=${_pf.wsSend.toFixed(0)}ms onMsg=${_pf.onMsg.toFixed(0)}ms ecPost=${_pf.ecPost.toFixed(0)}ms swAcc=${_pf.swAcc.toFixed(0)}ms /${dt.toFixed(0)}ms || seededQ=${seededQ.length} acc=${acc.length} idle=${idle.length}/${workers.length} sweepTgt=${sweepTarget} inflight(sw=${sweepInFlight},ec=${ecInFlight})${_gk}`);
+            _pf.gpuSeed=_pf.wsSend=_pf.onMsg=_pf.ecPost=_pf.swAcc=_pf.lagSum=0; _pf.gpuN=_pf.lagN=0; _pf.lagMax=0;
+            if(cracking&&!finished) setTimeout(_log,1000); };
+          setTimeout(_log,1000);
+        }
         const allDone=()=> sweepDone && sweepInFlight===0 && acc.length===0 && seededQ.length===0 && !seeding && ecInFlight===0;
         // SWEEPER: keep acc filled (unrank+checksum on workers); short chunks + a low cap so
         // it only briefly borrows workers from EC, and backs off once the backlog is deep.
         const sweeper=async()=>{ while(cracking && !finished && !sweepDone){
-          if(paused || !connected || acc.length>=ACC_CAP || idle.length===0 || sweepInFlight>=SWEEP_MAX){ await new Promise(r=>setTimeout(r,4)); continue; }
+          const _now=performance.now();
+          if(_now-_lastAdapt>250){ _lastAdapt=_now;   // rebalance on the SEED QUEUE (the stable consumer-backlog signal)
+            // b153 balanced on acc, but acc sawtooths violently (each big GPU seed drains
+            // 4-8k in one lump, then sweep refills) -> the controller sampled the noise and
+            // yo-yo'd straight back to sweepTgt=7, starving EC. seededQ is the STABLE signal:
+            //  - seededQ backed up at its cap  => the GPU seeder is out-producing EC
+            //    (EC is the bottleneck) => move a worker EC-ward (fewer sweepers).
+            //  - seededQ empty AND acc low     => the seeder is starved for candidates
+            //    (sweep can't keep up)   => add a sweeper.
+            //  - seededQ mid (=1) => balanced, hold. Natural dead zone (opposite ends).
+            if(seededQ.length>=SEED_AHEAD-1){ if(sweepTarget>1) sweepTarget--; }
+            else if(seededQ.length===0 && acc.length<SEED_BATCH){ if(sweepTarget<SWEEP_MAX) sweepTarget++; } }
+          if(paused || !connected || acc.length>=ACC_CAP || idle.length===0 || sweepInFlight>=sweepTarget){ await new Promise(r=>setTimeout(r,4)); continue; }
           const s=sweepCursor, nn=Math.min(SWEEP_CH, total-s); sweepCursor+=nn; if(sweepCursor>=total) sweepDone=true;
           const w=idle.shift(); sweepInFlight++;
           w.postMessage({type:'bloomsweep', id:'s'+(sweepJobId++), wordlist:ENGLISH, pattern:setPattern, mode, requireChecksum:reqCsum, start:s, n:nn, total});
@@ -4744,13 +4979,16 @@ async function startBloomCrack(){
           if(seededQ.length===0){ if(allDone()) break; await new Promise(r=>setTimeout(r,3)); continue; }
           const {b,seeds}=seededQ.shift();
           for(let off=0; off<b.length && cracking && !finished; off+=SHARD){
-            // gate on a free worker, the WS send window, AND the confirm backlog (don't let EC race past what the server confirms)
-            while((idle.length===0 || !sendable() || (hashed - ackedProgs/PPC) > BACKLOG) && cracking && !finished) await new Promise(r=>setTimeout(r,3));
+            // gate on: a free worker BEYOND the sweep pool's reserve (so EC can't seize the
+            // sweepers' share), the WS send window, AND the confirm backlog.
+            while((idle.length <= (sweepDone?0:Math.max(0,sweepTarget-sweepInFlight)) || !sendable() || (hashed - ackedProgs/PPC) > BACKLOG) && cracking && !finished) await new Promise(r=>setTimeout(r,3));
             if(!cracking||finished) break;
             const cs=b.slice(off,off+SHARD), seg=seeds.subarray(off*64,(off+cs.length)*64);
             const w=idle.shift(), id=dispatched++; pending.set(id,cs); ecInFlight++;
+            const _e0=_MAINPROF?performance.now():0;
             const sb=new Uint8Array(seg);   // copy the shard's seeds -> safe zero-copy transfer
             w.postMessage({type:'bloomderive', batchId:id, seedsBuf:sb.buffer, n:cs.length, purposes:PURPOSES, changes, gap}, [sb.buffer]);
+            if(_MAINPROF) _pf.ecPost+=performance.now()-_e0;
           }
         } };
         await Promise.all([sweeper(), seeder(), consumer()]);
@@ -4775,7 +5013,7 @@ async function startBloomCrack(){
       // ACKs (bounded so a lost worker can't hang us).
       const tD=performance.now(); while(!finished && cracking && useWorkers && ecInFlight>0 && performance.now()-tD<60000) await new Promise(r=>setTimeout(r,10));
       const tE=performance.now(); while(unacked.length>0 && !finished && cracking && performance.now()-tE<30000) await new Promise(r=>setTimeout(r,20));
-      if(!finished){ finished=true; _logStopRun({outcome:_crackAbort?'stopped':'exhausted', rejected_unverifiable:_falsePos||''}); cleanup();
+      if(!finished){ finished=true; _logStopRun({outcome:_crackAbort?'stopped':'exhausted', rejected_unverifiable:_falsePos||'', gpu_reverted:(_gpuReverted?'yes (fell back to CPU mid-run)':'')}); cleanup();
         res.innerHTML='<span class="note">'+esc(t(_crackAbort?'crackStopped':'bloomNoMatch'))+'</span>'
           +(_falsePos>0 ? '<div class="warnmsg" style="margin-top:6px">'+esc(t('bloomRejected').replace('%n',_falsePos))+'</div>' : '');
         setEndButtons(); _crackAbort=false; }
@@ -5611,7 +5849,8 @@ function updatePrognosisToast(){
   const toast=$('#prognosisToast'); if(!toast) return;
   const mobile = window.matchMedia && window.matchMedia('(max-width:860px)').matches;
   const res=$('#results');
-  if(!mobile || !res){ toast.classList.remove('show'); return; }
+  const explOpen = (()=>{ const o=$('#exploreOverlay'); return o && o.classList.contains('on'); })();
+  if(!mobile || !res || explOpen){ toast.classList.remove('show'); return; }   // hide the toast while the explorer dialog is open
   const vh=window.innerHeight, rr=res.getBoundingClientRect();
   const prognosisVisible = rr.top < vh*0.85 && rr.bottom > 0;
   if(prognosisVisible) _toastForce=false;                 // reached it -> drop the forced nudge
@@ -5793,10 +6032,8 @@ function render(r, input){
   if(r.narrowingLevers.length)
     html+=`<div class="card"><h3>${t('levers')}</h3><ul class="levers">${r.narrowingLevers.map(l=>`<li>${esc(l)}</li>`).join('')}</ul></div>`;
 
-  html+=`<div class="card"><button class="ghost" id="showSample">🎲 ${t('showDryRun')}</button></div>`;
-  $('#results').innerHTML=html;
+  $('#results').innerHTML=html;   // (the 🔭 explorer lives in the "Search shape" header line)
   const cb=$('#ctaBench'); if(cb) cb.onclick=openBenchModal;
-  const ss=$('#showSample'); if(ss) ss.onclick=openSampleModal;
   const oc=$('#openCrack'); if(oc) oc.onclick=onOpenCrack;
 }
 function openCrackModal(){ $('#crackSummary').innerHTML = lastR ? strategyText(lastR) : ''; $('#crackOverlay').classList.add('on'); }
@@ -5840,6 +6077,329 @@ function line(set,i,checkValid){
   return `<code class="${bad?'bad':''}"><span class="ix">#${i}</span> ${esc(disp)}${checkValid?(bad?' ✗':' ✓'):''}</code>`;
 }
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+// ================= Search-space explorer (dry-run visualizer) =================
+// A VIEW over the exact enumerator the crack walks. rxe's unrank(i) gives O(1)
+// random access into the ORDERED set, so the whole (possibly billions-strong)
+// space is navigable without enumerating it: the slider maps a fraction -> an
+// index, and a NATIVE-SCROLL window of cards renders from that anchor (grows on
+// scroll = infinite scroll, capped to protect the DOM). Strike-through = rejected
+// by the BIP39 checksum. Tap a valid card to expand its derivation tree (the
+// addresses it produces) -- lazily computed + cached. Native scroll (not a wheel
+// hijack) so variable-height expanded cards and phones both behave.
+let _expl = null;   // { set,N,checkValid,mask,anchor,count,cfg,cache }
+const _EXPL_SLIDER_MAX = 1000000n, _EXPL_BASE = 40, _EXPL_GROW = 60, _EXPL_MAX = 600;
+// Which token positions VARY across the set (grammar-agnostic: diff a few samples).
+function _explVarMask(set, N, wordsMode){
+  if(!wordsMode) return null;   // only mnemonic sets have per-word positions to highlight
+  const idxs=[0n, 1n, N/2n, N-1n], rows=[];
+  for(const i of idxs){ if(i<0n||i>=N) continue; const s=set.unrank(i); if(s==null) continue; rows.push(s.trim().split(/\s+/)); }
+  if(rows.length<2) return null;
+  const len=rows[0].length;
+  if(!rows.every(r=>r.length===len)) return null;
+  const mask=new Array(len).fill(false);
+  for(let p=0;p<len;p++){ const w=rows[0][p]; if(rows.some(r=>r[p]!==w)) mask[p]=true; }
+  return mask;
+}
+// Read the SAME derivation config the crack uses (purposes/accounts/change/gap +
+// the fixed passphrase and the concrete target address to highlight).
+function _explCfg(){
+  const C=window.BIP39Crypto;
+  const PM={bip44:44,bip49:49,bip84:84,bip86:86};   // local (the estimate's _pmap isn't global); electrum has no BIP address path here
+  let purposes=[]; try{ purposes=$$('#purposes input').filter(c=>c.checked).map(c=>PM[c.dataset.p]).filter(x=>x!==undefined); }catch(_){}
+  if(!purposes.length) purposes=[84];
+  const nacct=Math.max(1,Math.min(parseInt($('#accts').value,10)||1, 3));   // cap accounts shown so a tree stays readable
+  const gap=Math.max(1,parseInt($('#gap').value,10)||1);
+  const nchange=Math.max(1,parseInt($('#change').value,10)||1); const changes=nchange>=2?[0,1]:[0];
+  let passFixed=''; try{ const ps=lastR._sets.passSet; if(ps && !ps.isInfinite() && ps.cardinality()===1n) passFixed=ps.unrank(0n)||''; }catch(_){}
+  let mnFixed=''; try{ const ws=lastR._sets.wordsSet; if(ws && !ws.isInfinite() && ws.cardinality()===1n) mnFixed=ws.unrank(0n)||''; }catch(_){}
+  let targetAddr=null; try{ const a=$('#addr').value.trim(); if(a){ C.decodeAddress(a); targetAddr=a; } }catch(_){}
+  return { purposes, nacct, coin:0, changes, gap, passFixed, mnFixed, targetAddr };
+}
+// The derivation tree for one candidate: seed -> per purpose/account/change/index
+// -> address; the leaf matching the target (address mode) is highlighted. In
+// passphrase mode the candidate IS the passphrase (fixed mnemonic + it); otherwise
+// the candidate is the mnemonic (+ the fixed passphrase).
+function _explTreeInner(idxKey, cand){   // the leaves HTML only (the .expl-tree container lives in the card)
+  if(_expl.cache.has(idxKey)) return _expl.cache.get(idxKey);
+  const C=window.BIP39Crypto, cfg=_expl.cfg; let html;
+  try{
+    // joint: candidate = mnemonic, passphrase = the axis-2 selection; passphrase mode: candidate = passphrase.
+    const pass = _expl.mode==='joint' ? (_expl.ppCur||'') : cfg.passFixed;
+    const seed = _expl.isWords ? C.mnemonicToSeed(cand, pass) : C.mnemonicToSeed(cfg.mnFixed, cand);
+    const leaves=[]; let more=0; const CAP=12;
+    for(const p of cfg.purposes){ for(let a=0;a<cfg.nacct;a++){ for(const ch of cfg.changes){ for(let i=0;i<cfg.gap;i++){
+      if(leaves.length>=CAP){ more++; continue; }
+      let addr='', prog=''; try{ const tg=C.addressTarget(seed,p,a,cfg.coin,ch,i); addr=C.encodeAddress(tg); prog=C.toHex(tg.program); }catch(_){ addr='—'; }
+      leaves.push({ path:`m/${p}'/${cfg.coin}'/${a}'/${ch}/${i}`, addr, prog, hit: cfg.targetAddr && addr===cfg.targetAddr });
+    }}}}
+    html=leaves.map(l=>
+      // Plain by default. data-prog = the program the bloom filter matches on; in bloom
+      // builds the async check turns ONLY the addresses found in the filter into an
+      // underlined Blockchair link (the underline itself is the "seen on-chain" signal).
+      `<div class="expl-leaf${l.hit?' hit':''}"${l.prog?` data-prog="${l.prog}"`:''}>`
+      + `<span class="expl-path">${esc(l.path)}</span>`
+      + `<span class="expl-addr" data-addr="${esc(l.addr)}">${esc(l.addr)}</span>`
+      + (l.hit?' <span class="expl-hit">✓</span>':'') + `</div>`
+    ).join('')
+       + (more?`<div class="expl-more">+${more} ${esc(t('explMore'))}</div>`:'');
+  }catch(e){ html=`<div class="expl-more">${esc((e&&e.message)||'derive error')}</div>`; }
+  _expl.cache.set(idxKey, html);
+  return html;
+}
+function _explIxHtml(idx){   // middle-ellipsis only past 30 DIGITS, full value in a tooltip
+  const s=fmtBig(idx);
+  if(idx.toString().length<=30) return `<span class="expl-ix">#${s}</span>`;
+  return `<span class="expl-ix" title="#${esc(s)}">#${esc(s.slice(0,9))}…${esc(s.slice(-9))}</span>`;
+}
+function _explCard(idx, str){
+  const cv=_expl.checkValid;                          // show ✓/✗ + strike (checksum ON, words mode)
+  const bad = cv && !VALIDATOR.isValid(str);          // struck only when the checksum actually rejects
+  let inner;
+  if(_expl.isWords){ const words=str.trim().split(/\s+/);   // word chips regardless of checksum on/off
+    inner=words.map((w,p)=>{ const isVar=_expl.mask?_expl.mask[p]:true;
+      return `<span class="expl-w${isVar?' var':''}"${isVar?` title="${esc(t('explVarWord'))}"`:''}>${esc(w)}</span>`; }).join(' ');
+  } else inner=`<span class="expl-w var">${esc(str)}</span>`;
+  const derivable = !bad;   // valid candidates (or all, when checksum is OFF) derive addresses -> always-shown tree
+  const badge = cv ? (bad?`<span class="expl-badge bad" title="${esc(t('explInvalidCk'))}">✗</span>`
+                        :`<span class="expl-badge ok" title="${esc(t('explValid'))}">✓</span>`) : '';
+  return `<div class="expl-row${bad?' bad':''}" data-idx="${idx.toString()}"${bad?` title="${esc(t('explInvalidCk'))}"`:''}>`
+       + `<div class="expl-head">${badge}${_explIxHtml(idx)}</div>`   // badge BEFORE the number
+       + `<div class="expl-mn">${inner}</div>`
+       + (derivable?`<div class="expl-tree pending"></div>`:'') + `</div>`;   // trees are always expanded; filled lazily (near-viewport)
+}
+function _explCardsHtml(start, cnt){
+  const rows=_expl.set.unrankBatch?_expl.set.unrankBatch(start,cnt):null;
+  const out=[];
+  for(let k=0;k<cnt;k++){ const idx=start+BigInt(k); if(idx>=_expl.N) break;
+    const s = rows && rows[k]!=null ? rows[k] : _expl.set.unrank(idx); if(s==null) break;
+    out.push(_explCard(idx, s)); }
+  return out.join('');
+}
+function _explSyncSlider(idx){
+  const sl=$('#explSlider'); if(!sl || document.activeElement===sl) return;
+  sl.value = String(_expl.N>1n ? Number(idx*_EXPL_SLIDER_MAX/(_expl.N-1n)) : 0);
+}
+// The window is [winStart, winStart+winCount): a native-scroll list that grows BOTH
+// ways (append near the bottom, prepend near the top) so you can always scroll back
+// -- fixes "jump to the last element and you're stuck". Jumping puts the target near
+// the top with a few cards above it so there's something to scroll back into.
+function _explWindow(start, want){
+  if(start<0n) start=0n; _expl.winStart=start;
+  const room=_expl.N-start;
+  _expl.winCount=Math.min(want, _EXPL_MAX, Number(room>BigInt(_EXPL_MAX)?BigInt(_EXPL_MAX):room));
+  $('#explView').innerHTML=_explCardsHtml(_expl.winStart, _expl.winCount);
+}
+// Trees are ALWAYS expanded, but derived LAZILY for near-viewport cards only, so a
+// window of struck-heavy checksum-ON candidates stays instant and a checksum-OFF
+// (all-derivable) window fills progressively as you scroll instead of blocking.
+let _explFilling=false;
+async function _explFillTrees(){
+  if(!_expl || _explFilling) return; _explFilling=true;
+  try{ const view=$('#explView'); let guard=0;
+    while(_expl && guard++<4000){
+      const st=view.scrollTop, top=st-200, bot=st+view.clientHeight+500;
+      let target=null;
+      for(const el of view.querySelectorAll('.expl-tree.pending')){
+        const row=el.parentElement; if(!row) continue;
+        if(row.offsetTop>bot) break;                          // in DOM order; nothing more is near the viewport yet
+        if(row.offsetTop+row.offsetHeight<top) continue;      // scrolled past -> leave pending for later
+        target=el; break;
+      }
+      if(!target) break;
+      const row=target.parentElement, idxKey=row.dataset.idx;
+      let cand=null; try{ cand=_expl.set.unrank(BigInt(idxKey)); }catch(_){}
+      target.classList.remove('pending');
+      target.innerHTML = cand!=null ? _explTreeInner(idxKey, cand) : '';
+      _explBloomRegister();                     // async filter check for the leaves just added
+      await new Promise(r=>setTimeout(r,0));   // yield: paint + input between (heavy) seed derivations
+    }
+  } finally { _explFilling=false; }
+}
+function _explGoto(X){
+  if(X<0n) X=0n; const hi=_expl.N>0n?_expl.N-1n:0n; if(X>hi) X=hi;
+  const view=$('#explView'), PRE=8n;
+  _explWindow(X-PRE, 8+_EXPL_BASE);
+  const card=view.querySelector(`.expl-row[data-idx="${X.toString()}"]`);
+  view.scrollTop = card ? card.offsetTop : 0;
+  _explSyncSlider(X); _explFillTrees();
+}
+function _explAppend(){
+  if(!_expl||_expl.winCount>=_EXPL_MAX) return; const view=$('#explView');
+  const next=_expl.winStart+BigInt(_expl.winCount); if(next>=_expl.N) return;
+  const room=_expl.N-next, add=Math.min(_EXPL_GROW, _EXPL_MAX-_expl.winCount, Number(room>BigInt(_EXPL_GROW)?BigInt(_EXPL_GROW):room));
+  if(add<=0) return;
+  view.insertAdjacentHTML('beforeend', _explCardsHtml(next, add)); _expl.winCount+=add; _explFillTrees();
+}
+function _explPrepend(){
+  if(!_expl||_expl.winStart<=0n||_expl.winCount>=_EXPL_MAX) return; const view=$('#explView');
+  const add=Number(_expl.winStart>BigInt(_EXPL_GROW)?BigInt(_EXPL_GROW):_expl.winStart);
+  if(add<=0) return;
+  const newStart=_expl.winStart-BigInt(add), before=view.scrollHeight, st=view.scrollTop;
+  view.insertAdjacentHTML('afterbegin', _explCardsHtml(newStart, add));
+  _expl.winStart=newStart; _expl.winCount+=add;
+  view.scrollTop = st + (view.scrollHeight-before);   // keep the viewport visually put
+  _explFillTrees();
+}
+// first valid at index>=from (fwd) / last valid at index<=from (bwd); null if none in the scan cap.
+function _explSeekFwd(from){ let cur=from<0n?0n:from, scanned=0; const CAP=300000,CH=4096;
+  while(scanned<CAP && cur<_expl.N){ const cnt=Math.min(CH, Number(_expl.N-cur>BigInt(CH)?BigInt(CH):_expl.N-cur));
+    const rows=_expl.set.unrankBatch?_expl.set.unrankBatch(cur,cnt):null;
+    for(let k=0;k<cnt;k++){ const s=rows&&rows[k]!=null?rows[k]:_expl.set.unrank(cur+BigInt(k)); if(s!=null&&VALIDATOR.isValid(s)) return cur+BigInt(k); }
+    cur+=BigInt(cnt); scanned+=cnt; } return null; }
+function _explSeekBwd(from){ let end=(from<_expl.N?from:_expl.N-1n)+1n, scanned=0; const CAP=300000,CH=4096;
+  while(scanned<CAP && end>0n){ const cnt=Number(end>BigInt(CH)?BigInt(CH):end); const start=end-BigInt(cnt);
+    const rows=_expl.set.unrankBatch?_expl.set.unrankBatch(start,cnt):null;
+    for(let k=cnt-1;k>=0;k--){ const s=rows&&rows[k]!=null?rows[k]:_expl.set.unrank(start+BigInt(k)); if(s!=null&&VALIDATOR.isValid(s)) return start+BigInt(k); }
+    end=start; scanned+=cnt; } return null; }
+function _explRandIdx(N){
+  if(N<=9007199254740992n) return BigInt(Math.floor(Math.random()*Number(N)));
+  const bits=N.toString(2).length; let r;
+  do{ let s=''; while(s.length<bits) s+=Math.floor(Math.random()*1073741824).toString(2).padStart(30,'0'); r=BigInt('0b'+s.slice(0,bits)); }while(r>=N);
+  return r; }
+// The index currently at the top of the viewport (for prev/next relative navigation).
+function _explTopIdx(){ const view=$('#explView'), st=view.scrollTop;
+  for(const r of view.querySelectorAll('.expl-row')){ if(r.offsetTop+r.offsetHeight > st+4) return BigInt(r.dataset.idx); }
+  return _expl.winStart; }
+// The 5-button nav operates over the VALID space (checksum ON) or the whole space (OFF).
+function _explNav(which){
+  if(!_expl) return; const cv=_expl.checkValid, top=_explTopIdx(), hi=_expl.N-1n;
+  let X=null;
+  if(which==='first') X = cv ? _explSeekFwd(0n) : 0n;
+  else if(which==='last') X = cv ? _explSeekBwd(hi) : hi;
+  else if(which==='next') X = cv ? _explSeekFwd(top+1n) : (top<hi?top+1n:hi);
+  else if(which==='prev') X = cv ? _explSeekBwd(top-1n) : (top>0n?top-1n:0n);
+  else if(which==='rand'){ const r=_explRandIdx(_expl.N); X = cv ? (_explSeekFwd(r) ?? _explSeekBwd(r)) : r; }
+  if(X==null){ try{ alert(t(which==='prev'?'explNoneBehind':'explNoneAhead').replace('%n', fmtBig(300000))); }catch(_){} return; }
+  _explGoto(X);
+}
+// ---- passphrase axis (joint mode only): a SELECTOR that sets which passphrase the
+// expanded derivations use. No checksum on this axis, so no strikes / valid-seeking.
+function _explPpReadout(){
+  const el=$('#explPpCur'); if(!el) return; const s=_expl.ppCur||'';
+  const shown = s===''?'""' : s;
+  el.textContent = shown.length>28 ? shown.slice(0,13)+'…'+shown.slice(-13) : shown;
+  el.title = s;
+  const sl=$('#explPpSlider'); if(sl && document.activeElement!==sl){ sl.value=String(_expl.ppN>1n?Number(_expl.ppIdx*_EXPL_SLIDER_MAX/(_expl.ppN-1n)):0); }
+}
+function _explRefreshTrees(){   // passphrase changed -> re-derive all trees for the new passphrase (lazily)
+  if(!_expl) return; _expl.cache.clear(); const view=$('#explView'); if(!view) return;
+  for(const tree of view.querySelectorAll('.expl-tree')){ tree.innerHTML=''; tree.classList.add('pending'); }
+  if(BLOOM&&_expl.bWs){ _expl.bRes=new Map(); _expl.bEls=new Map(); _expl.bSent=new Set(); _expl.bQueue=[]; _expl.bUnacked=[]; }   // addresses changed -> re-query the filter
+  _explFillTrees();
+}
+// ---- bloom-filter annotation (bloom builds only): asks the live filter whether each
+// derived address has ever been used, ASYNC -- cards render instantly, badges paint in
+// as HIT/ACK come back over the WebSocket. Only derived programs go over the wire.
+// A found address becomes an underlined Blockchair link (the underline = "seen on-chain");
+// a not-found address is left exactly as it was (plain text).
+function _explBloomUse(el){ if(!el || el.tagName==='A') return; const addr=el.dataset.addr||el.textContent; if(!addr||addr==='—') return;
+  const a=document.createElement('a'); a.className='expl-addr'; a.dataset.addr=addr; a.textContent=addr;
+  a.href='https://blockchair.com/bitcoin/address/'+encodeURIComponent(addr); a.target='_blank'; a.rel='noopener noreferrer'; a.title=t('explBloomUsedTip');
+  el.replaceWith(a); }
+function _explBloomInit(){
+  if(!BLOOM||!_expl) return;
+  _expl.bRes=new Map(); _expl.bEls=new Map(); _expl.bSent=new Set(); _expl.bQueue=[]; _expl.bUnacked=[]; _expl.bWs=null;
+  try{
+    const _devHost=(location.hostname==='127.0.0.1'||location.hostname==='localhost')?window.__BLOOM_WS:null;
+    const url=_devHost||((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/');
+    const ws=new WebSocket(url); _expl.bWs=ws;
+    ws.onopen=()=>_explBloomFlush();
+    ws.onmessage=(ev)=>{ if(!_expl) return; for(const ln of String(ev.data).split('\n')){ if(!ln) continue;
+      if(ln.startsWith('HIT ')){ const h=ln.slice(4).trim().toLowerCase(); _expl.bRes.set(h,'used'); const set=_expl.bEls.get(h); if(set){ for(const el of set) _explBloomUse(el); _expl.bEls.delete(h); } }
+      else if(ln.startsWith('ACK ')){ const f=_expl.bUnacked.shift(); if(f) for(const p of f){ if(_expl.bRes.get(p)!=='used'){ _expl.bRes.set(p,'miss'); _expl.bEls.delete(p); } } }   // miss = leave the address plain
+    } };
+    ws.onerror=()=>{}; ws.onclose=()=>{};
+  }catch(_){ _expl.bWs=null; }
+}
+function _explBloomClose(){ if(_expl&&_expl.bWs){ try{ _expl.bWs.onclose=null; _expl.bWs.close(); }catch(_){} _expl.bWs=null; } }
+function _explBloomFlush(){ if(!_expl||!_expl.bWs||_expl.bWs.readyState!==1) return;
+  while(_expl.bQueue.length){ const progs=_expl.bQueue.splice(0,512); try{ _expl.bWs.send(progs.join('\n')); _expl.bUnacked.push(progs); }catch(_){ break; } } }
+function _explBloomRegister(){   // called after each lazy fill; registers new leaves, cheap via the bchk flag
+  if(!BLOOM||!_expl||!_expl.bWs) return; const view=$('#explView'); if(!view) return;
+  for(const leaf of view.querySelectorAll('.expl-leaf[data-prog]')){ if(leaf.dataset.bchk) continue; leaf.dataset.bchk='1';
+    const prog=(leaf.dataset.prog||'').toLowerCase(), el=leaf.querySelector('.expl-addr'); if(!prog||!el) continue;
+    const res=_expl.bRes.get(prog); if(res==='used'){ _explBloomUse(el); continue; } if(res==='miss') continue;
+    let set=_expl.bEls.get(prog); if(!set){ set=new Set(); _expl.bEls.set(prog,set); } set.add(el);
+    if(!_expl.bSent.has(prog)){ _expl.bSent.add(prog); _expl.bQueue.push(prog); } }
+  _explBloomFlush();
+}
+function _explPpGoto(idx){
+  if(!_expl||!_expl.ppSet) return; let hi=_expl.ppN>0n?_expl.ppN-1n:0n;
+  if(idx<0n) idx=0n; if(idx>hi) idx=hi;
+  _expl.ppIdx=idx; try{ _expl.ppCur=_expl.ppSet.unrank(idx)||''; }catch(_){ _expl.ppCur=''; }
+  _explPpReadout(); _explRefreshTrees();
+}
+function _explPpNav(which){
+  if(!_expl||!_expl.ppSet) return; const hi=_expl.ppN-1n; let X=_expl.ppIdx;
+  if(which==='first') X=0n; else if(which==='last') X=hi;
+  else if(which==='next') X=_expl.ppIdx<hi?_expl.ppIdx+1n:hi;
+  else if(which==='prev') X=_expl.ppIdx>0n?_expl.ppIdx-1n:0n;
+  else if(which==='rand') X=_explRandIdx(_expl.ppN);
+  _explPpGoto(X);
+}
+function openExplorer(){
+  if(!lastR) return;
+  const mode=lastR.mode;
+  const isPass=(mode!=='words'&&mode!=='joint');   // words/joint -> mnemonic set (checksum); passphrase -> passphrase set
+  const set= isPass ? (lastR._sets.passSet||lastR._sets.wordsSet) : lastR._sets.wordsSet;
+  const view=$('#explView');
+  $('#exploreOverlay').classList.add('on');
+  const note=(k)=>{ view.innerHTML=`<div class="note" style="padding:14px">${esc(t(k))}</div>`; _expl=null; };
+  if(!set) return note('nothingSample');
+  if(set.isInfinite()) return note('sampleUnbounded');
+  const N=set.cardinality(); if(N==null||N<=0n) return note('unboundedShort');
+  const isWords=!isPass;
+  // Honor the main page's "require BIP39 checksum": OFF -> the search tries EVERY
+  // candidate, so nothing is rejected -> no strike-outs, no ✓/✗ (the nav then spans
+  // the whole space rather than just the checksum-valid one).
+  let cksumOn=true; try{ const cb=$('#reqChecksum'); cksumOn = cb ? cb.checked : true; }catch(_){}
+  const checkValid = isWords && cksumOn;
+  _expl={ set, N, isWords, checkValid, mode, mask:_explVarMask(set,N,isWords), winStart:0n, winCount:0, cache:new Map(), cfg:_explCfg(),
+          ppSet:null, ppN:0n, ppIdx:0n, ppCur:'' };
+  // Passphrase axis: only in joint mode, and only when card(pp)>1 (a fixed passphrase
+  // needs no axis). It's a SELECTOR for the derivations, not a second list.
+  let ppOn=false;
+  if(mode==='joint'){ const ps=lastR._sets.passSet;
+    if(ps && !ps.isInfinite()){ const pN=ps.cardinality(); if(pN!=null && pN>1n){ _expl.ppSet=ps; _expl.ppN=pN; try{ _expl.ppCur=ps.unrank(0n)||''; }catch(_){} ppOn=true; } } }
+  const ppBar=$('#explPpBar'); if(ppBar) ppBar.hidden=!ppOn;
+  const mnLabel=$('#explMnLabel'); if(mnLabel) mnLabel.hidden=!ppOn;   // label the two axes only when both are shown
+  if(ppOn){ $('#explPpSlider').value='0'; _explPpReadout(); }
+  $('#explSlider').value='0';
+  const sb=$('#explSeekBox'); if(sb) sb.hidden=true;
+  const intro=$('#exploreIntro'); if(intro) intro.textContent = t('exploreIntro');
+  _explBloomInit();   // open the filter WS (bloom builds only) before the first fill registers leaves
+  _explGoto(0n);
+  try{ updatePrognosisToast(); }catch(_){}   // hide the "Go to Prognosis" toast while the dialog is open
+}
+function _wireExplorer(){
+  const view=$('#explView'), sl=$('#explSlider');
+  if(!view) return;
+  const close=()=>{ _explBloomClose(); $('#exploreOverlay').classList.remove('on'); try{ updatePrognosisToast(); }catch(_){} };   // restore the toast on close
+  const cx=$('#exploreClose'), cb=$('#exploreCloseB'); if(cx) cx.onclick=close; if(cb) cb.onclick=close;
+  if(sl) sl.oninput=()=>{ if(!_expl) return; const hi=_expl.N>1n?_expl.N-1n:0n; _explGoto(hi*BigInt(sl.value)/_EXPL_SLIDER_MAX); };
+  [['explFirst','first'],['explPrev','prev'],['explRand','rand'],['explNext','next'],['explLast','last']]
+    .forEach(([id,which])=>{ const b=$('#'+id); if(b) b.onclick=()=>_explNav(which); });
+  // seek to an exact index (a quick inline box -- handy when you KNOW the index, e.g. demoing a known "common case")
+  const seekBtn=$('#explSeek'), seekBox=$('#explSeekBox'), seekIn=$('#explSeekInput'), seekGo=$('#explSeekGo');
+  const doSeek=()=>{ if(!_expl||!seekIn) return; const raw=(seekIn.value||'').replace(/[^0-9]/g,''); if(raw){ try{ _explGoto(BigInt(raw)); }catch(_){} } if(seekBox) seekBox.hidden=true; };
+  if(seekBtn) seekBtn.onclick=()=>{ if(!seekBox) return; seekBox.hidden=!seekBox.hidden; if(!seekBox.hidden&&seekIn){ seekIn.value=''; seekIn.focus(); } };
+  if(seekGo) seekGo.onclick=doSeek;
+  if(seekIn) seekIn.addEventListener('keydown',e=>{ if(e.key==='Enter') doSeek(); else if(e.key==='Escape'&&seekBox){ seekBox.hidden=true; } });
+  // passphrase axis (joint mode)
+  const psl=$('#explPpSlider'); if(psl) psl.oninput=()=>{ if(!_expl||!_expl.ppSet) return; const hi=_expl.ppN>1n?_expl.ppN-1n:0n; _explPpGoto(hi*BigInt(psl.value)/_EXPL_SLIDER_MAX); };
+  [['explPpFirst','first'],['explPpPrev','prev'],['explPpRand','rand'],['explPpNext','next'],['explPpLast','last']]
+    .forEach(([id,which])=>{ const b=$('#'+id); if(b) b.onclick=()=>_explPpNav(which); });
+  view.addEventListener('scroll',()=>{ if(!_expl) return;
+    if(view.scrollTop+view.clientHeight >= view.scrollHeight-240) _explAppend();
+    else if(view.scrollTop < 80) _explPrepend();
+    _explFillTrees();   // reveal trees as cards scroll into view
+  });
+  // trees are always expanded now; the only tap target is a middle-ellipsised index,
+  // which reveals its full value in place (title tooltips don't fire on mobile taps).
+  view.addEventListener('click',(e)=>{ const ix=e.target.closest('.expl-ix[title]'); if(!ix) return;
+    ix.textContent = ix.getAttribute('title'); ix.removeAttribute('title'); });
+}
 
 // ---------- dictionaries ----------
 function addDict(){
@@ -5940,6 +6500,47 @@ function renderDictList(){
     <h3>🎲 <span data-i18n="dryRun">Dry-run sample</span> <span class="pill" data-i18n="viaUnrank">via librxe unrank</span> <button class="x" id="sampleClose">✕</button></h3>
     <div class="body sample" id="sampleBody"></div>
     <div class="foot"><button class="ghost" id="sampleCloseB" data-i18n="close">Close</button></div>
+  </div>
+</div>
+<!-- Search-space explorer (dry-run visualizer) -->
+<div class="overlay" id="exploreOverlay">
+  <div class="modal wide">
+    <h3>🔭 <span data-i18n="explore">Explore the search space</span> <span class="pill" data-i18n="viaUnrank">via librxe unrank</span> <button class="x" id="exploreClose">✕</button></h3>
+    <div class="body">
+      <div class="note" id="exploreIntro" data-i18n="exploreIntro" style="margin-bottom:8px"></div>
+      <!-- passphrase axis (joint mode only): a SELECTOR, not a list -- sets which passphrase the expanded derivations use -->
+      <div class="expl-ppbar" id="explPpBar" hidden>
+        <div class="expl-pplabel"><span data-i18n="explPassAxis">Passphrase</span>: <span class="expl-ppcur" id="explPpCur"></span></div>
+        <input type="range" id="explPpSlider" min="0" max="1000000" value="0" step="1" class="expl-slider" aria-label="passphrase">
+        <div class="expl-controls">
+          <span class="expl-validnav">
+            <button class="ghost" id="explPpFirst" data-i18n-title="explNavFirst" title="first">|◁</button>
+            <button class="ghost" id="explPpPrev"  data-i18n-title="explNavPrev"  title="previous">◁</button>
+            <button class="ghost" id="explPpRand"  data-i18n-title="explNavRand"  title="random">🎲</button>
+            <button class="ghost" id="explPpNext"  data-i18n-title="explNavNext"  title="next">▷</button>
+            <button class="ghost" id="explPpLast"  data-i18n-title="explNavLast"  title="last">▷|</button>
+          </span>
+        </div>
+      </div>
+      <div class="expl-pplabel" id="explMnLabel" data-i18n="explMnemAxis" hidden>Mnemonic</div>
+      <input type="range" id="explSlider" min="0" max="1000000" value="0" step="1" class="expl-slider" aria-label="lightspeed">
+      <div class="expl-controls">
+        <span class="expl-validnav">
+          <button class="ghost" id="explFirst" data-i18n-title="explNavFirst" title="first">|◁</button>
+          <button class="ghost" id="explPrev"  data-i18n-title="explNavPrev"  title="previous">◁</button>
+          <button class="ghost" id="explRand"  data-i18n-title="explNavRand"  title="random">🎲</button>
+          <button class="ghost" id="explNext"  data-i18n-title="explNavNext"  title="next">▷</button>
+          <button class="ghost" id="explLast"  data-i18n-title="explNavLast"  title="last">▷|</button>
+          <button class="ghost" id="explSeek"  data-i18n-title="explSeek"     title="go to index">🎯</button>
+        </span>
+      </div>
+      <div class="expl-seekbox" id="explSeekBox" hidden>
+        <input type="text" id="explSeekInput" class="expl-seekin" inputmode="numeric" autocomplete="off" data-i18n-ph="explSeekPh" placeholder="index #">
+        <button class="ghost" id="explSeekGo" style="margin-top:0">→</button>
+      </div>
+      <div class="expl-view" id="explView"></div>
+    </div>
+    <div class="foot"><button class="ghost" id="exploreCloseB" data-i18n="close">Close</button></div>
   </div>
 </div>
 <!-- Benchmark share: optional user label/note before copying the JSON -->

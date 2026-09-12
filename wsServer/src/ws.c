@@ -1077,6 +1077,39 @@ static int read_proxy_v1(struct ws_connection *client){
     snprintf(client->ip, sizeof(client->ip), "%s", src);
   return 0;
 }
+
+/* reseed39 patch: HTTP access log for static GETs (visitor usage stats, separate from the
+   bloom WS activity). Combined Log Format -> parseable by GoAccess/AWStats/etc. Enabled via
+   ws_set_access_log(path); the real client IP comes from client->ip (set by read_proxy_v1). */
+#include <time.h>
+static FILE* g_access_fp = NULL;
+void ws_set_access_log(const char*path){
+  if(path && path[0]){ g_access_fp = fopen(path,"ae"); if(g_access_fp) setvbuf(g_access_fp,NULL,_IOLBF,0); }
+}
+static int rs_ci_eq(const char*a,const char*b,size_t n){
+  for(size_t i=0;i<n;i++){ char x=a[i],y=b[i]; if(x>='A'&&x<='Z')x+=32; if(y>='A'&&y<='Z')y+=32; if(x!=y) return 0; }
+  return 1;
+}
+/* extract HTTP header value (case-insensitive name) into out; "-" if absent; quotes sanitized. */
+static void rs_hdr(const char*req,const char*name,char*out,size_t outsz){
+  out[0]='-'; out[1]=0; size_t nl=strlen(name);
+  for(const char*p=req; *p; p++){
+    if((p==req || p[-1]=='\n') && rs_ci_eq(p,name,nl) && p[nl]==':'){
+      const char*v=p+nl+1; while(*v==' '||*v=='\t') v++;
+      size_t k=0; while(v[k] && v[k]!='\r' && v[k]!='\n' && k+1<outsz){ char c=v[k]; if(c=='"')c='\''; out[k++]=c; }
+      out[k]=0; return;
+    }
+  }
+}
+static void rs_access_log(struct ws_frame_data*wfd,const char*req,const char*reqline,int status,long bytes){
+  if(!g_access_fp) return;
+  char ua[512], ref[512];
+  rs_hdr(req,"User-Agent",ua,sizeof ua); rs_hdr(req,"Referer",ref,sizeof ref);
+  char ts[64]; time_t t=time(0); struct tm tmv; localtime_r(&t,&tmv);
+  strftime(ts,sizeof ts,"%d/%b/%Y:%H:%M:%S %z",&tmv);
+  const char*ip = wfd->client->ip[0] ? wfd->client->ip : "-";
+  fprintf(g_access_fp, "%s - - [%s] \"%s\" %d %ld \"%s\" \"%s\"\n", ip, ts, reqline, status, bytes, ref, ua);
+}
 static const char* rs_mime(const char*p){
   const char*d=strrchr(p,'.'); if(!d) return "application/octet-stream";
   if(!strcmp(d,".html")||!strcmp(d,".htm")) return "text/html; charset=utf-8";
@@ -1089,27 +1122,30 @@ static const char* rs_mime(const char*p){
   if(!strcmp(d,".ico"))  return "image/x-icon";
   return "application/octet-stream";
 }
-static int rs_serve_static(struct ws_frame_data *wfd){
+static int rs_serve_static(struct ws_frame_data *wfd, const char *rawreq){
   if(!g_www_root[0]) return 0;
-  const char*req=(const char*)wfd->frm;
+  const char*req=rawreq;
   if(strncmp(req,"GET ",4)) return 0;
+  /* capture the request line (up to CRLF) for the access log */
+  char reqline[600]; { size_t k=0; while(req[k] && req[k]!='\r' && req[k]!='\n' && k+1<sizeof reqline){ char c=req[k]; if(c=='"')c='\''; reqline[k]=c; k++; } reqline[k]=0; }
   char path[512]; size_t i=0; const char*s=req+4;
   while(*s && *s!=' ' && *s!='?' && i<sizeof(path)-1) path[i++]=*s++;
   path[i]=0;
   char resp[512];
-  if(strstr(path,"..")){ int l=snprintf(resp,sizeof resp,"HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); SEND(wfd->client,resp,l); return 1; }
+  if(strstr(path,"..")){ int l=snprintf(resp,sizeof resp,"HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); SEND(wfd->client,resp,l); rs_access_log(wfd,req,reqline,403,0); return 1; }
   if(!strcmp(path,"/bloom-info") && g_bloom_info[0]){   /* capability pre-flight (feature-detect) */
     int l=snprintf(resp,sizeof resp,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n%s",g_bloom_info);
-    SEND(wfd->client,resp,l); return 1; }
+    SEND(wfd->client,resp,l); rs_access_log(wfd,req,reqline,200,(long)strlen(g_bloom_info)); return 1; }
   if(!strcmp(path,"/")) snprintf(path,sizeof path,"/index.html");
   char full[1100]; snprintf(full,sizeof full,"%s%s",g_www_root,path);
   int fd=open(full,O_RDONLY);
-  if(fd<0){ int l=snprintf(resp,sizeof resp,"HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\nnot found\n"); SEND(wfd->client,resp,l); return 1; }
+  if(fd<0){ const char*body="not found\n"; int l=snprintf(resp,sizeof resp,"HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n%s",body); SEND(wfd->client,resp,l); rs_access_log(wfd,req,reqline,404,(long)strlen(body)); return 1; }
   int hl=snprintf(resp,sizeof resp,"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",rs_mime(full));
   SEND(wfd->client,resp,hl);
-  char buf[65536]; ssize_t n;
-  while((n=read(fd,buf,sizeof buf))>0){ if(SEND(wfd->client,buf,(size_t)n)<0) break; }
+  char buf[65536]; ssize_t n; long sent=0;
+  while((n=read(fd,buf,sizeof buf))>0){ if(SEND(wfd->client,buf,(size_t)n)<0) break; sent+=n; }
   close(fd);
+  rs_access_log(wfd,req,reqline,200,sent);
   return 1;
 }
 
@@ -1135,10 +1171,15 @@ static int do_handshake(struct ws_frame_data *wfd)
 	wfd->amt_read = n;
 	wfd->cur_pos = (size_t)((ptrdiff_t)(p - (char *)wfd->frm)) + 4;
 
+	/* reseed39: pristine copy of the raw request BEFORE get_handshake_response mangles frm in
+	   place (it NUL-splits while parsing) -- so the static access log can still read the headers. */
+	char rawreq[MESSAGE_LENGTH];
+	{ size_t rn = (size_t)n < sizeof rawreq ? (size_t)n : sizeof rawreq - 1; memcpy(rawreq, wfd->frm, rn); rawreq[rn] = 0; }
+
 	/* Get response. */
 	if (get_handshake_response((char *)wfd->frm, &response) < 0)
 	{
-		if (rs_serve_static(wfd)) return (-1);   /* reseed39: not WS -> served a static file, close */
+		if (rs_serve_static(wfd, rawreq)) return (-1);   /* reseed39: not WS -> served a static file, close */
 		DEBUG("Cannot get handshake response, request was: %s\n", wfd->frm);
 		return (-1);
 	}

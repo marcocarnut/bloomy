@@ -10,6 +10,8 @@ WorkingDirectory=/home/mac/reseed39
 Environment=BIND=127.0.0.1
 # Real client IPs in the logs (stunnel sends the PROXY header).
 Environment=PROXY_PROTOCOL=1
+# HTTP access log (Combined Log Format) for static GETs -> visitor usage stats.
+Environment=ACCESS_LOG=/home/mac/reseed39/access.log
 # --resident=f1: pre-warm ONLY filter1 (6.5 GiB) into RAM; filter2 (8 GiB) stays cold on disk
 # and pages in on the rare hit. Saves ~8 GiB resident for other coins' filters, no FPR loss.
 ExecStart=/home/mac/reseed39/server --resident=f1 /home/mac/reseed39/alladdrs_classic.blf 8080 /home/mac/reseed39/www

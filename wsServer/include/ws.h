@@ -339,6 +339,8 @@ extern "C" {
 	/* reseed39 patch: expect a HAProxy PROXY v1 header per connection (real client IP behind
 	   a TLS terminator, e.g. stunnel `protocol = proxy`). Enable ONLY when the terminator sends it. */
 	extern void ws_set_proxy_protocol(int on);
+	/* reseed39 patch: write a Combined-Log-Format access line per static GET to this file. */
+	extern void ws_set_access_log(const char *path);
 
 #ifdef AFL_FUZZ
 	extern int ws_file(struct ws_events *evs, const char *file);
