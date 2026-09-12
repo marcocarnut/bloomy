@@ -1,0 +1,14 @@
+# Install as /etc/logrotate.d/reseed39-bloom
+# Rotates the HTTP access log. copytruncate: the server holds the file open (fopen "a") and has
+# no reopen signal, so we truncate in place rather than rename -- the open fd keeps writing, no
+# restart needed. `su mac mac` because the log dir isn't root-owned.
+/home/mac/reseed39/log/access.log {
+    su mac mac
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
